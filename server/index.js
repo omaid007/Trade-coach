@@ -158,30 +158,10 @@ app.get("/api/options", requireAuth, async (req, res) => {
 
 // ─── AI Commentary ───────────────────────────────────────────────────────────
 
-const _aiHits = new Map(); // ip → { count, day }
-const AI_DAILY_LIMIT = 10;
-
-function aiRateOk(ip) {
-  const today = new Date().toISOString().slice(0, 10);
-  const e = _aiHits.get(ip);
-  if (!e || e.day !== today) { _aiHits.set(ip, { count: 1, day: today }); return true; }
-  if (e.count >= AI_DAILY_LIMIT) return false;
-  e.count++;
-  return true;
-}
-
 app.post("/api/ai-commentary", express.json(), requireAuth, async (req, res) => {
   const { snapshot, apiKey: bodyKey } = req.body || {};
-  const key = bodyKey || process.env.ANTHROPIC_API_KEY;
-  if (!key) return res.status(503).json({ error: "No API key — add it in Settings or server/.env" });
-
-  // Rate-limit only when using the server's shared key
-  if (!bodyKey) {
-    const ip = req.headers["x-forwarded-for"]?.split(",")[0].trim() || req.socket.remoteAddress;
-    if (!aiRateOk(ip)) {
-      return res.status(429).json({ error: "Daily AI limit reached (10/day). Add your own key in Settings to bypass." });
-    }
-  }
+  // Always require the key from the client — the server's env key is never exposed.
+  if (!bodyKey) return res.status(403).json({ error: "Add your Anthropic API key in Settings to use AI commentary." });
   if (!snapshot) return res.status(400).json({ error: "Missing snapshot" });
 
   const userMsg = [
@@ -197,7 +177,7 @@ app.post("/api/ai-commentary", express.json(), requireAuth, async (req, res) => 
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": key,
+        "x-api-key": bodyKey,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({

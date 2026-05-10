@@ -112,7 +112,7 @@ function renderSwatches(activeTheme) {
 function renderKeyStatus(apiKey) {
   const el = document.getElementById("st-key-status");
   if (!el) return;
-  el.textContent = apiKey ? `Active: ${mask(apiKey)}` : "Using key from server/.env (if set)";
+  el.textContent = apiKey ? `Active: ${mask(apiKey)}` : "No key saved — AI commentary will be unavailable.";
   el.className   = "st-key-status " + (apiKey ? "st-key-ok" : "st-key-dim");
 }
 
