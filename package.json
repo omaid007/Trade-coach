@@ -16,7 +16,7 @@
     "electron:pack": "vite build && electron-builder --dir"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "dependencies": {
     "dotenv": "^17.4.2",
