@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Trade Coach — Technical Analysis & Trade Planner</title>
+<link rel="stylesheet" href="/src/styles.css" />
+</head>
+<body>
+
+<div id="loginOverlay" class="login-overlay" style="display:none;">
+  <div class="login-card">
+    <h2>Trade Coach</h2>
+    <p>Enter the password to continue.</p>
+    <input id="loginPassword" type="password" placeholder="Password" autocomplete="current-password" />
+    <button id="loginBtn" class="primary" style="width:100%; margin-top:8px;">Login</button>
+    <div id="loginError" class="error" style="display:none; margin-top:8px;">Incorrect password — try again.</div>
+  </div>
+</div>
+
+<div class="container">
+
+  <header>
+    <div>
+      <h1>Trade Coach</h1>
+      <div class="sub">Technical analysis & trade-plan builder · Educational use only</div>
+    </div>
+    <div class="controls">
+      <input id="tickerInput" type="text" placeholder="Symbol (e.g. AAPL, TSLA, SPY)" value="AAPL" style="width: 200px; text-transform: uppercase;" />
+      <div class="style-toggle">
+        <button data-style="day">Day</button>
+        <button data-style="swing" class="active">Swing</button>
+        <button data-style="position">Position</button>
+      </div>
+      <button id="analyzeBtn" class="primary">Analyze →</button>
+      <span id="autoRefreshBadge" style="display:none; font-size:11px; color:var(--text-dim); user-select:none; white-space:nowrap;">↻ <span id="autoRefreshCountdown">—</span></span>
+    </div>
+  </header>
+
+  <!-- ── Main navigation ── -->
+  <nav class="main-nav">
+    <button class="main-tab active" data-main="home">Home</button>
+    <button class="main-tab" data-main="watchlist">Watchlist</button>
+    <button class="main-tab" data-main="journal">Journal</button>
+    <button class="main-tab" data-main="tastytrade">Tastytrade</button>
+    <button class="main-tab" data-main="paper">Paper Trading</button>
+    <button class="main-tab" data-main="settings">Settings</button>
+  </nav>
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       HOME PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-home">
+
+    <div class="card summary-card">
+      <div class="head-row">
+        <div class="symbol-block">
+          <div class="sym" id="symLabel">—</div>
+          <div class="nm" id="symName">Enter a ticker and click Analyze</div>
+        </div>
+        <div class="price-block">
+          <div class="px" id="priceLabel">—</div>
+          <div class="ch" id="changeLabel">—</div>
+        </div>
+        <div style="margin-left:auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <span class="pill" id="sessionPill">session: —</span>
+          <span class="pill" id="trendPill">trend: —</span>
+          <span class="pill" id="momoPill">momentum: —</span>
+          <span class="pill" id="volPill">volatility: —</span>
+          <span class="verdict flat" id="verdict">ANALYZING…</span>
+        </div>
+      </div>
+      <div id="oneLiner" style="margin-top: 10px; font-size: 14px; color: var(--text);">
+        <em>Plain-English read of current conditions will appear here.</em>
+      </div>
+      <div class="ai-row" style="margin-top: 10px;">
+        <button id="aiBtn" class="ai-btn">✦ Ask AI</button>
+        <div id="aiCommentary" class="ai-commentary"></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card" style="padding: 0;">
+        <div id="tv-container">
+          <div style="padding: 60px 20px; text-align: center; color: var(--text-faint);">TradingView chart will load here</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title">Trade Plan</h3>
+        <div id="planBody"><div class="loading">Plan will appear after analysis…</div></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="tabs">
+          <div class="tab active" data-tab="signals">Indicators</div>
+          <div class="tab" data-tab="report">Detailed Report</div>
+          <div class="tab" data-tab="levels">Key Levels</div>
+          <div class="tab" data-tab="options">Options Flow</div>
+          <div class="tab" data-tab="news">News</div>
+          <div class="tab" data-tab="backtest">Backtest</div>
+        </div>
+        <div class="tab-panel active" id="panel-signals">
+          <div class="signal-row">
+            <div>Confidence:</div>
+            <div class="conf-bar"><div class="fill" id="confFill" style="width: 0%;"></div></div>
+            <div id="confText" style="color: var(--text-dim); font-size: 12px;">—</div>
+            <div id="setupName" style="margin-left: auto; font-weight: 600; color: var(--text);">—</div>
+          </div>
+          <div class="ind-grid" id="indicators"><div class="loading">Computing indicators…</div></div>
+        </div>
+        <div class="tab-panel" id="panel-report">
+          <div class="report" id="report"><em class="loading">Report will be generated after analysis…</em></div>
+        </div>
+        <div class="tab-panel" id="panel-levels">
+          <div id="levelsBody"><div class="loading">Levels will appear here…</div></div>
+        </div>
+        <div class="tab-panel" id="panel-options">
+          <div class="loading">Options flow will appear after analysis…</div>
+        </div>
+        <div class="tab-panel" id="panel-news">
+          <div class="loading">News will appear after analysis…</div>
+        </div>
+        <div class="tab-panel" id="panel-backtest">
+          <div class="loading">Backtest will run after analysis…</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 class="card-title">Execute the Trade</h3>
+        <div class="broker-row">
+          <label style="color: var(--text-dim); font-size: 12px;">Broker:</label>
+          <select id="brokerSelect">
+            <option value="generic">Generic order ticket</option>
+            <option value="robinhood">Robinhood</option>
+            <option value="schwab">Charles Schwab / thinkorswim</option>
+            <option value="fidelity">Fidelity</option>
+            <option value="ibkr">Interactive Brokers</option>
+            <option value="webull">Webull</option>
+            <option value="etrade">E*TRADE</option>
+            <option value="tradingview">TradingView (broker integrations)</option>
+          </select>
+          <button class="copy-btn" id="copyTicketBtn">Copy ticket</button>
+        </div>
+        <div id="executeBody"><div class="loading">Order details will appear after analysis…</div></div>
+        <div class="disclaimer">
+          <strong>Important:</strong> This is an educational tool. The setups are pattern-based heuristics, not personalized advice.
+          Always confirm levels yourself, size positions according to your own risk tolerance, and never risk money you can't afford to lose.
+          Past performance doesn't predict future results.
+        </div>
+      </div>
+    </div>
+
+    <!-- Price Alerts -->
+    <div class="card" style="margin-bottom: 16px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <h3 class="card-title" style="margin:0;">Price Alerts</h3>
+        <button id="alerts-req-btn" style="font-size:12px;">Enable notifications</button>
+      </div>
+      <div class="alerts-add-row">
+        <input id="alerts-sym"   type="text"   placeholder="Symbol" style="width:80px; text-transform:uppercase;" />
+        <select id="alerts-dir">
+          <option value="above">Above</option>
+          <option value="below">Below</option>
+        </select>
+        <input id="alerts-price" type="number" placeholder="Price" step="0.01" style="width:90px;" />
+        <button id="alerts-add-btn" class="primary" style="font-size:12px;">+ Add alert</button>
+      </div>
+      <div id="alerts-list" style="margin-top:10px;"></div>
+    </div>
+
+    <!-- Calculators -->
+    <div class="card" id="calcCard" style="margin-bottom: 16px; display: none;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px;">
+        <h3 class="card-title" style="margin: 0;">Calculators</h3>
+        <button class="copy-btn" id="calcResetBtn">Reset from plan</button>
+      </div>
+      <div class="calc-2col">
+        <div>
+          <div class="calc-section-label">Position Sizer</div>
+          <div class="calc-field-grid">
+            <span class="calc-field-label">Account ($)</span>
+            <input id="cAcct"  type="number" min="0"   step="1000" placeholder="50000" />
+            <span class="calc-field-label">Risk %</span>
+            <input id="cRisk"  type="number" min="0.1" step="0.1"  placeholder="1.0"   />
+            <span class="calc-field-label">Entry ($)</span>
+            <input id="cEntry" type="number" min="0"   step="0.01" placeholder="0.00"  />
+            <span class="calc-field-label">Stop ($)</span>
+            <input id="cStop"  type="number" min="0"   step="0.01" placeholder="0.00"  />
+          </div>
+          <div class="calc-results" id="cSizerOut"><div class="calc-hint">Fill all fields to calculate.</div></div>
+        </div>
+        <div>
+          <div class="calc-section-label">P&amp;L Modeler</div>
+          <div class="calc-field-grid calc-field-grid-4">
+            <span class="calc-field-label">Shares</span>
+            <input id="cShares"  type="number" min="1" step="1"    placeholder="100"  />
+            <span class="calc-field-label">Entry ($)</span>
+            <input id="cPLEntry" type="number" min="0" step="0.01" placeholder="0.00" />
+          </div>
+          <div id="cTargetRows"></div>
+          <button class="calc-add-btn" id="cAddTarget">+ add target</button>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /main-home -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       WATCHLIST PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-watchlist" style="display:none;">
+
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+        <h3 class="card-title" style="margin:0;">Market Pulse</h3>
+        <span style="font-size:11px; color:var(--text-faint);">Refreshes every 60 s · Click to analyze</span>
+      </div>
+      <div class="wl-market-grid" id="wl-market-rows"></div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <h3 class="card-title" style="margin:0;">My Watchlist</h3>
+        <div class="wl-add-row">
+          <input id="wl-add-input" type="text" placeholder="Add ticker…" style="width:110px; text-transform:uppercase;" />
+          <button id="wl-add-btn" class="primary" style="font-size:12px;">+ Add</button>
+        </div>
+      </div>
+      <div id="wl-list-rows"><div class="wl-empty">No tickers yet — add one above.</div></div>
+    </div>
+
+  </div><!-- /main-watchlist -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       JOURNAL PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-journal" style="display:none;">
+
+    <div class="card">
+      <h3 class="card-title">Stats</h3>
+      <div class="jnl-stats-row" id="jnl-stats"><div class="jnl-no-stats">No closed trades yet.</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h3 class="card-title">Log a Trade</h3>
+        <form id="jnl-form" autocomplete="off">
+          <div class="jnl-form-grid">
+            <span class="jnl-lbl">Symbol</span>
+            <input id="jnl-sym"    type="text"   placeholder="AAPL" style="text-transform:uppercase;" />
+            <span class="jnl-lbl">Direction</span>
+            <select id="jnl-dir">
+              <option value="long">Long (Buy)</option>
+              <option value="short">Short (Sell)</option>
+            </select>
+            <span class="jnl-lbl">Shares</span>
+            <input id="jnl-shares" type="number" min="1"   step="1"    placeholder="100" />
+            <span class="jnl-lbl">Entry ($)</span>
+            <input id="jnl-entry"  type="number"            step="0.01" placeholder="0.00" />
+            <span class="jnl-lbl">Stop ($)</span>
+            <input id="jnl-stop"   type="number"            step="0.01" placeholder="0.00" />
+            <span class="jnl-lbl">Exit ($)</span>
+            <input id="jnl-exit"   type="number"            step="0.01" placeholder="leave blank if open" />
+            <span class="jnl-lbl">Setup</span>
+            <input id="jnl-setup"  type="text"   placeholder="e.g. pullback_long" />
+            <span class="jnl-lbl">Notes</span>
+            <input id="jnl-notes"  type="text"   placeholder="optional" />
+          </div>
+          <button type="submit" class="primary" style="margin-top:12px; font-size:13px; width:100%;">Log Trade</button>
+        </form>
+      </div>
+
+      <div class="card" style="overflow:hidden;">
+        <h3 class="card-title">Trade History</h3>
+        <div id="jnl-table"><div class="loading">No trades logged yet.</div></div>
+      </div>
+    </div>
+
+  </div><!-- /main-journal -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       TASTYTRADE PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-tastytrade" style="display:none;">
+
+    <div class="card" style="padding:0; overflow:hidden;">
+      <div id="tt-chart-container" style="height:380px; background:var(--bg-elev-2);">
+        <div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-faint); font-size:13px;">
+          Analyze a ticker on the Home tab to load the chart here.
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+        <h3 class="card-title" style="margin: 0;">Tastytrade Connection</h3>
+        <span id="tt-status" class="pill">not connected</span>
+      </div>
+      <div class="tabs" id="tt-tabs">
+        <div class="tab active" data-tt-tab="connect">Connect</div>
+        <div class="tab" data-tt-tab="account">Account</div>
+        <div class="tab" data-tt-tab="order">Place Order</div>
+        <div class="tab" data-tt-tab="auto">Auto-Trader</div>
+      </div>
+      <div id="tt-panel-connect" class="tab-panel active"></div>
+      <div id="tt-panel-account" class="tab-panel"></div>
+      <div id="tt-panel-order" class="tab-panel"></div>
+      <div id="tt-panel-auto" class="tab-panel"></div>
+    </div>
+
+  </div><!-- /main-tastytrade -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       PAPER TRADING PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-paper" style="display:none;">
+
+    <!-- Portfolio summary bar -->
+    <div class="card pp-summary-card">
+      <div class="pp-stats-row" id="pp-stats">
+        <div class="pp-stat"><div class="pp-stat-lbl">Portfolio</div><div class="pp-stat-val" id="pp-portfolio">—</div></div>
+        <div class="pp-stat"><div class="pp-stat-lbl">Cash</div><div class="pp-stat-val" id="pp-cash">—</div></div>
+        <div class="pp-stat"><div class="pp-stat-lbl">Unrealized</div><div class="pp-stat-val" id="pp-unreal">—</div></div>
+        <div class="pp-stat"><div class="pp-stat-lbl">Realized</div><div class="pp-stat-val" id="pp-realized">—</div></div>
+        <div class="pp-stat pp-stat-total"><div class="pp-stat-lbl">Total P&amp;L</div><div class="pp-stat-val" id="pp-total-pnl">—</div></div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <!-- Quick trade form -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+          <h3 class="card-title" style="margin:0;">Place Paper Trade</h3>
+          <button id="pp-fill-plan" style="font-size:12px;">↓ Fill from plan</button>
+        </div>
+        <div id="pp-trade-form">
+          <div class="pp-form-grid">
+            <span class="pp-form-lbl">Symbol</span>
+            <input id="pp-sym" type="text" placeholder="AAPL" style="text-transform:uppercase;" />
+            <span class="pp-form-lbl">Direction</span>
+            <select id="pp-dir">
+              <option value="long">Long (Buy)</option>
+              <option value="short">Short (Sell)</option>
+            </select>
+            <span class="pp-form-lbl">Shares</span>
+            <input id="pp-shares" type="number" min="1" step="1" placeholder="100" />
+            <span class="pp-form-lbl">Entry ($)</span>
+            <input id="pp-entry" type="number" step="0.01" placeholder="0.00" />
+            <span class="pp-form-lbl">Stop ($)</span>
+            <input id="pp-stop" type="number" step="0.01" placeholder="0.00" />
+            <span class="pp-form-lbl">Target 1 ($)</span>
+            <input id="pp-t1" type="number" step="0.01" placeholder="0.00" />
+            <span class="pp-form-lbl">Target 2 ($)</span>
+            <input id="pp-t2" type="number" step="0.01" placeholder="0.00" />
+          </div>
+          <div id="pp-form-err" class="error" style="display:none; margin:8px 0;"></div>
+          <button id="pp-open-btn" class="primary" style="margin-top:10px; font-size:13px;">Open Paper Trade</button>
+        </div>
+      </div>
+
+      <!-- Open positions -->
+      <div class="card">
+        <h3 class="card-title">Open Positions</h3>
+        <div id="pp-positions"><div class="loading">No open positions.</div></div>
+      </div>
+    </div>
+
+    <!-- Trade history + settings -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <h3 class="card-title" style="margin:0;">Trade History</h3>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <label style="font-size:12px; color:var(--text-dim);">Starting $</label>
+          <input id="pp-starting-input" type="number" min="1000" step="1000" style="width:100px;" placeholder="25000" />
+          <button id="pp-set-balance" style="font-size:12px;">Set &amp; Reset</button>
+          <button id="pp-reset-all" style="font-size:12px; color:var(--red); border-color:rgba(255,94,108,0.4);">Reset All</button>
+        </div>
+      </div>
+      <div id="pp-history"><div class="loading">No completed trades yet.</div></div>
+    </div>
+
+  </div><!-- /main-paper -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       SETTINGS PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-settings" style="display:none;">
+
+    <div class="st-grid">
+
+      <!-- Claude AI -->
+      <div class="card">
+        <h3 class="card-title">Claude AI</h3>
+        <p class="st-desc">The <strong>✦ Ask AI</strong> button uses Claude Haiku to give a 2-sentence coaching comment after each analysis. Add your key here to override the server default.</p>
+        <div class="st-key-row">
+          <input id="st-api-key" type="password" placeholder="sk-ant-..." style="flex:1;" autocomplete="off" />
+          <button id="st-save-key" class="primary" style="font-size:12px;">Save</button>
+          <button id="st-clear-key" style="font-size:12px;">Clear</button>
+        </div>
+        <div id="st-key-status" class="st-key-status st-key-dim">Using key from server/.env (if set)</div>
+        <div class="st-hint">Key is stored in your browser's localStorage — never sent anywhere except your own local server at 127.0.0.1.</div>
+      </div>
+
+      <!-- Appearance -->
+      <div class="card">
+        <h3 class="card-title">Appearance</h3>
+        <p class="st-desc">Color theme. Changes apply instantly.</p>
+        <div class="st-themes" id="st-themes"></div>
+      </div>
+
+    </div>
+
+    <!-- Defaults -->
+    <div class="card" style="margin-top:0;">
+      <h3 class="card-title">Trading Defaults</h3>
+      <p class="st-desc">These pre-fill the app on load and after each analysis.</p>
+      <div class="st-defaults-grid">
+        <div class="st-field">
+          <label class="st-lbl">Default symbol</label>
+          <input id="st-symbol" type="text" placeholder="AAPL" style="text-transform:uppercase; width:100px;" />
+        </div>
+        <div class="st-field">
+          <label class="st-lbl">Default style</label>
+          <div class="st-style-group" id="st-style-group">
+            <button class="st-style-btn" data-style="day">Day</button>
+            <button class="st-style-btn active" data-style="swing">Swing</button>
+            <button class="st-style-btn" data-style="position">Position</button>
+          </div>
+        </div>
+        <div class="st-field">
+          <label class="st-lbl">Account size ($)</label>
+          <input id="st-account" type="number" min="0" step="1000" style="width:120px;" />
+        </div>
+        <div class="st-field">
+          <label class="st-lbl">Risk per trade (%)</label>
+          <input id="st-risk" type="number" min="0.1" step="0.1" style="width:80px;" />
+        </div>
+      </div>
+      <button id="st-save-defaults" class="primary" style="margin-top:16px; font-size:13px;">Save defaults</button>
+    </div>
+
+    <!-- About -->
+    <div class="card" style="margin-bottom:16px;">
+      <h3 class="card-title">About</h3>
+      <div class="st-about-grid">
+        <div class="st-about-row"><span class="st-about-lbl">Version</span><span>0.1.0</span></div>
+        <div class="st-about-row"><span class="st-about-lbl">Price data</span><span>Yahoo Finance (unofficial API, proxied locally)</span></div>
+        <div class="st-about-row"><span class="st-about-lbl">Charts</span><span>TradingView widget</span></div>
+        <div class="st-about-row"><span class="st-about-lbl">AI commentary</span><span>Anthropic Claude Haiku (your API key, ~$0.0001/call)</span></div>
+        <div class="st-about-row"><span class="st-about-lbl">Disclaimer</span><span>Educational use only. Not investment advice. Past patterns don't predict future results.</span></div>
+      </div>
+    </div>
+
+  </div><!-- /main-settings -->
+
+  <div class="footnote">
+    Price data via Yahoo Finance (unofficial), proxied server-side. Chart by TradingView.
+  </div>
+
+</div><!-- /container -->
+
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

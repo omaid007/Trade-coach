@@ -1,0 +1,63 @@
+{
+  "name": "trade-coach",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Technical analysis & trade-plan builder. Educational use only.",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "server": "node server/index.js",
+    "start": "node server/index.js",
+    "build": "vite build",
+    "preview": "vite preview",
+    "electron:dev": "concurrently --names vite,electron --prefix-colors cyan,magenta \"vite\" \"electron .\"",
+    "electron:build": "vite build && electron-builder",
+    "electron:pack": "vite build && electron-builder --dir"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0",
+    "electron": "^42.0.1",
+    "electron-builder": "^26.8.1",
+    "vite": "^8.0.11"
+  },
+  "build": {
+    "appId": "com.tradecoach.app",
+    "productName": "Trade Coach",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "dist/**/*",
+      "package.json",
+      "!server/.env"
+    ],
+    "extraResources": [
+      {
+        "from": "server/.env",
+        "to": "server/.env"
+      }
+    ],
+    "mac": {
+      "target": [{ "target": "dmg" }],
+      "category": "public.app-category.finance",
+      "icon": "assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
