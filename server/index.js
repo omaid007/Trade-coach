@@ -436,7 +436,7 @@ wss.on("connection", (client) => {
 export function startServer(port = 0) {
   return new Promise((resolve, reject) => {
     httpServer
-      .listen(port, "127.0.0.1", () => {
+      .listen(port, "0.0.0.0", () => {
         const bound = httpServer.address().port;
         console.log(`Trade Coach server → http://127.0.0.1:${bound}`);
         resolve(bound);
