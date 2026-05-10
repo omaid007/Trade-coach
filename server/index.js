@@ -375,6 +375,135 @@ app.get("/api/tastytrade/accounts/:acn/positions", async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ─── Symbol search (autocomplete) ────────────────────────────────────────────
+
+app.get("/api/search", requireAuth, async (req, res) => {
+  const { q } = req.query;
+  if (!q || q.length < 1) return res.json({ quotes: [] });
+  const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=7&newsCount=0&enableFuzzyQuery=true&enableNavLinks=false`;
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
+    });
+    const data = await r.json();
+    const quotes = (data.quotes ?? [])
+      .filter(item => ["EQUITY", "ETF", "CRYPTOCURRENCY", "INDEX", "FUTURE"].includes(item.quoteType))
+      .slice(0, 6)
+      .map(item => ({ symbol: item.symbol, name: item.shortname || item.longname || "", type: item.quoteType }));
+    res.json({ quotes });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Batch quotes (portfolio + screener) ─────────────────────────────────────
+
+app.get("/api/quotes", requireAuth, async (req, res) => {
+  const { symbols } = req.query;
+  if (!symbols) return res.status(400).json({ error: "symbols required" });
+  const fields = "shortName,regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketVolume,averageVolume,marketCap,fiftyTwoWeekHigh,fiftyTwoWeekLow";
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=${fields}`;
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
+    });
+    const data = await r.json();
+    const quotes = (data.quoteResponse?.result ?? []).map(q => ({
+      symbol: q.symbol,
+      name: q.shortName || q.longName || q.symbol,
+      price: q.regularMarketPrice,
+      change: q.regularMarketChange,
+      changePct: q.regularMarketChangePercent,
+      volume: q.regularMarketVolume,
+      avgVolume: q.averageVolume,
+      high52: q.fiftyTwoWeekHigh,
+      low52: q.fiftyTwoWeekLow,
+      marketCap: q.marketCap,
+    }));
+    res.json({ quotes });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Market screener ──────────────────────────────────────────────────────────
+
+app.get("/api/screener", requireAuth, async (req, res) => {
+  const { screen = "gainers" } = req.query;
+
+  if (screen === "trending") {
+    try {
+      const r1 = await fetch("https://query1.finance.yahoo.com/v1/finance/trending/US?count=20", {
+        headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
+      });
+      const d1 = await r1.json();
+      const syms = (d1.finance?.result?.[0]?.quotes ?? []).map(q => q.symbol).join(",");
+      if (!syms) return res.json({ quotes: [] });
+      const r2 = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(syms)}`, {
+        headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
+      });
+      const d2 = await r2.json();
+      const quotes = (d2.quoteResponse?.result ?? []).map(q => ({
+        symbol: q.symbol, name: q.shortName || q.symbol,
+        price: q.regularMarketPrice, change: q.regularMarketChange,
+        changePct: q.regularMarketChangePercent, volume: q.regularMarketVolume, marketCap: q.marketCap,
+      }));
+      return res.json({ quotes });
+    } catch (err) {
+      return res.status(502).json({ error: err.message });
+    }
+  }
+
+  const scrIds = { gainers: "day_gainers", losers: "day_losers", active: "most_actives" };
+  const scrId = scrIds[screen] || "day_gainers";
+  const url = `https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?formatted=false&scrIds=${scrId}&count=20&region=US&lang=en-US`;
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
+    });
+    const data = await r.json();
+    const quotes = (data.finance?.result?.[0]?.quotes ?? []).map(q => ({
+      symbol: q.symbol, name: q.shortName || q.longName || q.symbol,
+      price: q.regularMarketPrice, change: q.regularMarketChange,
+      changePct: q.regularMarketChangePercent, volume: q.regularMarketVolume, marketCap: q.marketCap,
+    }));
+    res.json({ quotes });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ─── Earnings calendar ────────────────────────────────────────────────────────
+
+app.get("/api/earnings", requireAuth, async (req, res) => {
+  const { symbol } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents,earningsTrend,defaultKeyStatistics`;
+  try {
+    const r = await fetch(url, {
+      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
+    });
+    const data = await r.json();
+    const result = data?.quoteSummary?.result?.[0];
+    if (!result) return res.json({});
+
+    const cal = result.calendarEvents || {};
+    const trend = result.earningsTrend?.trend?.[0] || {};
+    const stats = result.defaultKeyStatistics || {};
+
+    const earningsDates = (cal.earnings?.earningsDate ?? []).map(d => d.fmt).filter(Boolean);
+    res.json({
+      nextDate:  earningsDates[0] || null,
+      epsEst:    trend.earningsEstimate?.avg?.fmt ?? null,
+      revEst:    trend.revenueEstimate?.avg?.fmt ?? null,
+      epsActual: stats.trailingEps?.fmt ?? null,
+      peRatio:   stats.trailingPE?.fmt ?? null,
+    });
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // Serve production build
 app.use(express.static(join(__dirname, "../dist")));
 

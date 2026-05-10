@@ -8,13 +8,16 @@
 import { fetchCommentary, buildSnapshot } from "./ai.js";
 import { initSettings, applyStoredTheme, getDefaults } from "./settings.js";
 import { STYLE_CONFIG } from "./config.js";
-import { fetchOHLC, fetchConfig, setAuthPassword } from "./api.js";
+import { fetchOHLC, fetchConfig, setAuthPassword, apiFetch } from "./api.js";
 import { initTastytrade, updateTastytradeOrder, atPriceTick, atUpdateIndicators, atUpdateOptionsFlow } from "./tastytrade.js";
 import { initPaperTrading, paperUpdatePlan, paperTabActivated, paperTabDeactivated } from "./paper.js";
 import { initWatchlist, watchlistTabActivated, watchlistTabDeactivated } from "./watchlist.js";
 import { initJournal, journalUpdatePlan } from "./journal.js";
 import { initAlerts, alertsSetSymbol } from "./alerts.js";
 import { runBacktest } from "./backtest.js";
+import { initAutocomplete } from "./autocomplete.js";
+import { initPortfolio, portfolioTabActivated, portfolioTabDeactivated } from "./portfolio.js";
+import { initScreener } from "./screener.js";
 import { getSession } from "./session.js";
 import { startStream, stopStream } from "./streamer.js";
 import { fetchOptionsFlow } from "./options.js";
@@ -187,6 +190,7 @@ async function analyze() {
     renderBacktest(btResult, STATE.setups[0]?.name ?? "");
     alertsSetSymbol(sym);
     journalUpdatePlan(STATE.plan, sym);
+    fetchEarnings(sym);
     scheduleRefresh();
     startStream(sym, (tick) => { renderTick(tick); atPriceTick(tick); });
     startOptionsRefresh();
@@ -211,6 +215,29 @@ function onUpdateSizing(accountSize, riskPct) {
   renderPlan(STATE.plan, STATE.style, onUpdateSizing);
   renderExecution(STATE.plan, STATE.symbol, STATE.style);
   renderCalculators(STATE.plan);
+}
+
+/* ---------- EARNINGS ---------- */
+async function fetchEarnings(sym) {
+  const row  = document.getElementById("earningsRow");
+  const date = document.getElementById("earningsDate");
+  const eps  = document.getElementById("earningsEps");
+  const rev  = document.getElementById("earningsRev");
+  const pe   = document.getElementById("earningsPE");
+  // reset
+  [row, eps, rev, pe].forEach(el => { if (el) el.style.display = "none"; });
+  if (date) date.textContent = "";
+
+  try {
+    const data = await apiFetch(`/api/earnings?symbol=${encodeURIComponent(sym)}`);
+    if (!data || !data.nextDate) return;
+
+    if (row)  row.style.display  = "flex";
+    if (date) { date.textContent = `📅 Next earnings: ${data.nextDate}`; }
+    if (eps && data.epsEst)  { eps.textContent = `EPS est: ${data.epsEst}`;  eps.style.display = ""; }
+    if (rev && data.revEst)  { rev.textContent = `Rev est: ${data.revEst}`;  rev.style.display = ""; }
+    if (pe  && data.peRatio) { pe.textContent  = `P/E: ${data.peRatio}`;     pe.style.display  = ""; }
+  } catch {}
 }
 
 /* ---------- AI COMMENTARY ---------- */
@@ -277,6 +304,7 @@ function switchMainTab(name) {
   if (name === _activeMain) return;
   if (_activeMain === "paper")     paperTabDeactivated();
   if (_activeMain === "watchlist") watchlistTabDeactivated();
+  if (_activeMain === "portfolio") portfolioTabDeactivated();
 
   document.querySelectorAll(".main-tab").forEach(b =>
     b.classList.toggle("active", b.dataset.main === name)
@@ -288,6 +316,7 @@ function switchMainTab(name) {
   _activeMain = name;
   if (name === "paper")     paperTabActivated();
   if (name === "watchlist") watchlistTabActivated();
+  if (name === "portfolio") portfolioTabActivated();
 }
 
 /* ---------- EVENT WIRING ---------- */
@@ -399,11 +428,17 @@ document.querySelectorAll(".style-toggle button").forEach(b => {
 initSettings();
 initTastytrade();
 initPaperTrading();
-initWatchlist((sym) => {
+
+const _goAnalyze = (sym) => {
   document.getElementById("tickerInput").value = sym;
   switchMainTab("home");
   analyze();
-});
+};
+
+initAutocomplete(document.getElementById("tickerInput"), _goAnalyze);
+initWatchlist(_goAnalyze);
+initPortfolio(_goAnalyze);
+initScreener(_goAnalyze);
 initJournal();
 initAlerts();
 renderSession();

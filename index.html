@@ -41,6 +41,8 @@
   <nav class="main-nav">
     <button class="main-tab active" data-main="home">Home</button>
     <button class="main-tab" data-main="watchlist">Watchlist</button>
+    <button class="main-tab" data-main="screener">Screener</button>
+    <button class="main-tab" data-main="portfolio">Portfolio</button>
     <button class="main-tab" data-main="journal">Journal</button>
     <button class="main-tab" data-main="tastytrade">Tastytrade</button>
     <button class="main-tab" data-main="paper">Paper Trading</button>
@@ -72,6 +74,12 @@
       </div>
       <div id="oneLiner" style="margin-top: 10px; font-size: 14px; color: var(--text);">
         <em>Plain-English read of current conditions will appear here.</em>
+      </div>
+      <div id="earningsRow" style="margin-top:8px; display:none; font-size:12px; color:var(--text-dim); display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+        <span id="earningsDate" class="pill" style="font-size:11px;"></span>
+        <span id="earningsEps"  style="display:none;"></span>
+        <span id="earningsRev"  style="display:none;"></span>
+        <span id="earningsPE"   style="display:none;"></span>
       </div>
       <div class="ai-row" style="margin-top: 10px;">
         <button id="aiBtn" class="ai-btn">✦ Ask AI</button>
@@ -382,6 +390,63 @@
     </div>
 
   </div><!-- /main-paper -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       SCREENER PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-screener" style="display:none;">
+
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px;">
+        <h3 class="card-title" style="margin:0;">Market Screener</h3>
+        <button id="scr-refresh-btn" style="font-size:12px;">↻ Refresh</button>
+      </div>
+      <div style="display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap;">
+        <button class="scr-tab active" data-screen="gainers">📈 Gainers</button>
+        <button class="scr-tab" data-screen="losers">📉 Losers</button>
+        <button class="scr-tab" data-screen="active">🔥 Most Active</button>
+        <button class="scr-tab" data-screen="trending">⚡ Trending</button>
+      </div>
+      <div id="scr-results"><div class="loading">Loading…</div></div>
+    </div>
+    <div class="footnote" style="margin-top:8px;">Click any symbol to analyze it → Home tab.</div>
+
+  </div><!-- /main-screener -->
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       PORTFOLIO PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-portfolio" style="display:none;">
+
+    <!-- Summary bar -->
+    <div class="card pp-summary-card" style="border-left-color: var(--green);">
+      <div class="pp-stats-row" id="pf-summary"></div>
+    </div>
+
+    <!-- Add position -->
+    <div class="card" style="margin-bottom:16px;">
+      <h3 class="card-title">Add / Update Position</h3>
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input id="pf-sym"    type="text"   placeholder="Symbol" style="width:90px; text-transform:uppercase;" />
+        <input id="pf-shares" type="number" placeholder="Shares" min="0.001" step="0.001" style="width:90px;" />
+        <input id="pf-cost"   type="number" placeholder="Avg cost ($)" min="0.01" step="0.01" style="width:120px;" />
+        <button id="pf-add-btn" class="primary" style="font-size:13px;">+ Add</button>
+      </div>
+      <div class="st-hint">If the symbol already exists, shares are averaged into the existing position.</div>
+    </div>
+
+    <!-- Holdings -->
+    <div class="card">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <h3 class="card-title" style="margin:0;">Holdings</h3>
+        <span style="font-size:11px; color:var(--text-faint);">Prices refresh every 60 s · Click symbol to analyze</span>
+      </div>
+      <div class="pf-table-wrap">
+        <div id="pf-list"><div class="loading">No positions yet.</div></div>
+      </div>
+    </div>
+
+  </div><!-- /main-portfolio -->
 
   <!-- ══════════════════════════════════════════════════════════════════════════
        SETTINGS PANEL
