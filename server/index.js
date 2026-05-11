@@ -37,24 +37,44 @@ app.get("/api/quote", requireAuth, async (req, res) => {
   const { symbol, range, interval } = req.query;
   if (!symbol) return res.status(400).json({ error: "symbol required" });
 
-  const url =
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
+  const path =
+    `/v8/finance/chart/${encodeURIComponent(symbol)}` +
     `?interval=${interval || "1d"}&range=${range || "6mo"}&includePrePost=false`;
 
-  try {
-    const upstream = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-      },
-    });
-    if (!upstream.ok) throw new Error(`Yahoo returned HTTP ${upstream.status}`);
-    const data = await upstream.json();
-    res.json(data);
-  } catch (err) {
-    res.status(502).json({ error: err.message });
+  // Reuse crumb cookie if fresh; otherwise fetch a fresh one.
+  // Cloud IPs (Railway, etc.) are blocked unless the request includes a valid YF session cookie.
+  let cookie = (_yfCookie && Date.now() < _yfCrumbExpiry) ? _yfCookie : null;
+  if (!cookie) {
+    try {
+      const r = await fetch("https://finance.yahoo.com", {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+      });
+      cookie = (r.headers.getSetCookie?.() ?? []).map(c => c.split(";")[0]).join("; ") || null;
+      if (cookie) { _yfCookie = cookie; _yfCrumbExpiry = Date.now() + 55 * 60_000; }
+    } catch {}
   }
+
+  const hdrs = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://finance.yahoo.com/",
+  };
+  if (cookie) hdrs["Cookie"] = cookie;
+
+  for (const host of ["query1", "query2"]) {
+    try {
+      const r = await fetch(`https://${host}.finance.yahoo.com${path}`, { headers: hdrs });
+      if (!r.ok) continue;
+      return res.json(await r.json());
+    } catch {}
+  }
+
+  res.status(502).json({ error: "Yahoo Finance is temporarily unavailable from this server. Please try again in a moment." });
 });
 
 // ─── Yahoo Finance crumb manager ─────────────────────────────────────────────
@@ -81,6 +101,21 @@ async function getCrumb() {
   return { crumb: _yfCrumb, cookie: _yfCookie };
 }
 
+// Returns browser-like headers for any Yahoo Finance API call.
+// Includes the cached session cookie when available so cloud IPs aren't blocked.
+function yfHdrs(extra = {}) {
+  const h = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/json",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://finance.yahoo.com/",
+    ...extra,
+  };
+  const cookie = (_yfCookie && Date.now() < _yfCrumbExpiry) ? _yfCookie : null;
+  if (cookie) h["Cookie"] = cookie;
+  return h;
+}
+
 // ─── News feed proxy ─────────────────────────────────────────────────────────
 
 app.get("/api/news", requireAuth, async (req, res) => {
@@ -88,7 +123,9 @@ app.get("/api/news", requireAuth, async (req, res) => {
   if (!symbol) return res.status(400).json({ error: "symbol required" });
 
   const UA = TT_HEADERS["User-Agent"];
-  const hdr = { "User-Agent": UA, "Accept": "application/json" };
+  const cookie = (_yfCookie && Date.now() < _yfCrumbExpiry) ? _yfCookie : null;
+  const hdr = { "User-Agent": UA, "Accept": "application/json", "Referer": "https://finance.yahoo.com/" };
+  if (cookie) hdr["Cookie"] = cookie;
 
   try {
     const [r1, r2] = await Promise.all([
@@ -382,17 +419,15 @@ app.get("/api/search", requireAuth, async (req, res) => {
   if (!q || q.length < 1) return res.json({ quotes: [] });
   const url = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=7&newsCount=0&enableFuzzyQuery=true&enableNavLinks=false`;
   try {
-    const r = await fetch(url, {
-      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
-    });
+    const r = await fetch(url, { headers: yfHdrs() });
     const data = await r.json();
     const quotes = (data.quotes ?? [])
       .filter(item => ["EQUITY", "ETF", "CRYPTOCURRENCY", "INDEX", "FUTURE"].includes(item.quoteType))
       .slice(0, 6)
       .map(item => ({ symbol: item.symbol, name: item.shortname || item.longname || "", type: item.quoteType }));
     res.json({ quotes });
-  } catch (err) {
-    res.status(502).json({ error: err.message });
+  } catch {
+    res.json({ quotes: [] });
   }
 });
 
@@ -404,9 +439,7 @@ app.get("/api/quotes", requireAuth, async (req, res) => {
   const fields = "shortName,regularMarketPrice,regularMarketChange,regularMarketChangePercent,regularMarketVolume,averageVolume,marketCap,fiftyTwoWeekHigh,fiftyTwoWeekLow";
   const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols)}&fields=${fields}`;
   try {
-    const r = await fetch(url, {
-      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
-    });
+    const r = await fetch(url, { headers: yfHdrs() });
     const data = await r.json();
     const quotes = (data.quoteResponse?.result ?? []).map(q => ({
       symbol: q.symbol,
@@ -433,15 +466,11 @@ app.get("/api/screener", requireAuth, async (req, res) => {
 
   if (screen === "trending") {
     try {
-      const r1 = await fetch("https://query1.finance.yahoo.com/v1/finance/trending/US?count=20", {
-        headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
-      });
+      const r1 = await fetch("https://query1.finance.yahoo.com/v1/finance/trending/US?count=20", { headers: yfHdrs() });
       const d1 = await r1.json();
       const syms = (d1.finance?.result?.[0]?.quotes ?? []).map(q => q.symbol).join(",");
       if (!syms) return res.json({ quotes: [] });
-      const r2 = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(syms)}`, {
-        headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
-      });
+      const r2 = await fetch(`https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(syms)}`, { headers: yfHdrs() });
       const d2 = await r2.json();
       const quotes = (d2.quoteResponse?.result ?? []).map(q => ({
         symbol: q.symbol, name: q.shortName || q.symbol,
@@ -458,9 +487,7 @@ app.get("/api/screener", requireAuth, async (req, res) => {
   const scrId = scrIds[screen] || "day_gainers";
   const url = `https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?formatted=false&scrIds=${scrId}&count=20&region=US&lang=en-US`;
   try {
-    const r = await fetch(url, {
-      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
-    });
+    const r = await fetch(url, { headers: yfHdrs() });
     const data = await r.json();
     const quotes = (data.finance?.result?.[0]?.quotes ?? []).map(q => ({
       symbol: q.symbol, name: q.shortName || q.longName || q.symbol,
@@ -480,9 +507,7 @@ app.get("/api/earnings", requireAuth, async (req, res) => {
   if (!symbol) return res.status(400).json({ error: "symbol required" });
   const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=calendarEvents,earningsTrend,defaultKeyStatistics`;
   try {
-    const r = await fetch(url, {
-      headers: { "User-Agent": TT_HEADERS["User-Agent"], "Accept": "application/json" },
-    });
+    const r = await fetch(url, { headers: yfHdrs() });
     const data = await r.json();
     const result = data?.quoteSummary?.result?.[0];
     if (!result) return res.json({});
