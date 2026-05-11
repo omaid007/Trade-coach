@@ -1,3 +1,5 @@
+import { fetchOHLC } from "./api.js";
+
 const STORAGE_KEY = "tc_watchlist_v1";
 const MARKET = ["SPY", "QQQ", "IWM", "VIX", "DIA"];
 const REFRESH_MS = 60_000;
@@ -12,16 +14,12 @@ function load() {
 function save(list) { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }
 
 async function fetchQuote(symbol) {
-  const r = await fetch(`/api/quote?symbol=${encodeURIComponent(symbol)}&range=1d&interval=1d`);
-  const json = await r.json();
-  const meta = json?.chart?.result?.[0]?.meta;
-  if (!meta) throw new Error("no data");
-  const price = meta.regularMarketPrice ?? 0;
-  const prev  = meta.chartPreviousClose ?? meta.previousClose ?? price;
+  const data = await fetchOHLC(symbol, "1d", "1d");
+  const price = data.meta.price ?? data.closes.at(-1) ?? 0;
+  const prev  = data.meta.prevClose ?? price;
   const change    = price - prev;
   const changePct = prev ? (change / prev) * 100 : 0;
-  const name      = meta.longName || meta.shortName || symbol;
-  return { symbol, name, price, change, changePct };
+  return { symbol, name: data.meta.name, price, change, changePct };
 }
 
 function pctStr(n) { return (n >= 0 ? "+" : "") + n.toFixed(2) + "%"; }
