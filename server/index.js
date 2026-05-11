@@ -31,6 +31,27 @@ app.get("/api/config", (req, res) => {
   res.json({ authRequired: !!AUTH_PASSWORD });
 });
 
+// Diagnostic — remove after debugging
+app.get("/api/yftest", async (req, res) => {
+  const tests = [
+    "https://finance.yahoo.com",
+    "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=5d",
+    "https://query2.finance.yahoo.com/v8/finance/chart/AAPL?interval=1d&range=5d",
+  ];
+  const results = [];
+  for (const url of tests) {
+    try {
+      const r = await fetch(url, {
+        headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36", "Accept": "application/json" },
+      });
+      results.push({ url, status: r.status, ok: r.ok });
+    } catch (e) {
+      results.push({ url, error: e.message, cause: String(e.cause ?? "") });
+    }
+  }
+  res.json(results);
+});
+
 // ─── Yahoo Finance OHLC ───────────────────────────────────────────────────────
 
 app.get("/api/quote", requireAuth, async (req, res) => {
