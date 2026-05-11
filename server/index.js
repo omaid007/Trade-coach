@@ -58,44 +58,34 @@ app.get("/api/quote", requireAuth, async (req, res) => {
   const { symbol, range, interval } = req.query;
   if (!symbol) return res.status(400).json({ error: "symbol required" });
 
-  const path =
-    `/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?interval=${interval || "1d"}&range=${range || "6mo"}&includePrePost=false`;
+  const base = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval || "1d"}&range=${range || "6mo"}&includePrePost=false`;
 
-  // Reuse crumb cookie if fresh; otherwise fetch a fresh one.
-  // Cloud IPs (Railway, etc.) are blocked unless the request includes a valid YF session cookie.
-  let cookie = (_yfCookie && Date.now() < _yfCrumbExpiry) ? _yfCookie : null;
-  if (!cookie) {
-    try {
-      const r = await fetch("https://finance.yahoo.com", {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          "Accept-Language": "en-US,en;q=0.9",
-        },
-      });
-      cookie = (r.headers.getSetCookie?.() ?? []).map(c => c.split(";")[0]).join("; ") || null;
-      if (cookie) { _yfCookie = cookie; _yfCrumbExpiry = Date.now() + 55 * 60_000; }
-    } catch {}
-  }
+  // Yahoo Finance requires a session cookie + crumb for authenticated API access.
+  // Without them, cloud IPs get 429 rate-limited immediately.
+  try {
+    const { crumb, cookie } = await getCrumb();
+    const hdrs = { ...yfHdrs(), Cookie: cookie };
+    const urlWithCrumb = (host) =>
+      `https://${host}.finance.yahoo.com${base}&crumb=${encodeURIComponent(crumb)}`;
 
-  const hdrs = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Accept": "application/json",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://finance.yahoo.com/",
-  };
-  if (cookie) hdrs["Cookie"] = cookie;
+    for (const host of ["query1", "query2"]) {
+      try {
+        const r = await fetch(urlWithCrumb(host), { headers: hdrs });
+        if (r.status === 401 || r.status === 403) {
+          // Crumb may be stale — force refresh once
+          await refreshCrumb();
+          const r2 = await fetch(urlWithCrumb(host), { headers: { ...yfHdrs(), Cookie: _yfCookie } });
+          if (!r2.ok) continue;
+          return res.json(await r2.json());
+        }
+        if (!r.ok) continue;
+        return res.json(await r.json());
+      } catch {}
+    }
+  } catch {}
 
-  for (const host of ["query1", "query2"]) {
-    try {
-      const r = await fetch(`https://${host}.finance.yahoo.com${path}`, { headers: hdrs });
-      if (!r.ok) continue;
-      return res.json(await r.json());
-    } catch {}
-  }
-
-  res.status(502).json({ error: "Yahoo Finance is temporarily unavailable from this server. Please try again in a moment." });
+  // Tell the client to fall back to browser-side CORS proxy
+  res.status(429).json({ error: "Yahoo Finance is rate-limiting this server — retrying via browser." });
 });
 
 // ─── Yahoo Finance crumb manager ─────────────────────────────────────────────

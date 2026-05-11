@@ -39,7 +39,7 @@ export async function fetchOHLC(symbol, range, interval) {
     return parseYfChart(data, symbol);
   } catch (e) {
     if (e.code === 401) throw e; // auth error — surface immediately
-    // Server proxy failed (Railway IP blocked, etc.) — fall through to browser fetch
+    // Server returned 429/502 (rate-limited or blocked) — fall through to browser fetch
   }
 
   // 2. Browser-direct via CORS proxy (browser IP is not blocked by Yahoo Finance)
