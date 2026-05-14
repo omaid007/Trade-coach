@@ -132,6 +132,40 @@ export function renderIndicators(d, ind, top) {
 }
 
 /* ================== TRADE PLAN CARD ================== */
+
+function rrBar(plan) {
+  const { direction, entry, stop, targets } = plan;
+  const t1 = targets[0]?.price, t2 = targets[1]?.price;
+  if (!t1 || !t2) return "";
+
+  const isLong = direction === "long";
+  const lo = isLong ? stop : t2;
+  const hi = isLong ? t2   : stop;
+  const range = hi - lo;
+  if (range <= 0) return "";
+
+  const p = (v) => ((v - lo) / range * 100).toFixed(1);
+  const entryLP = p(entry.lo), entryHP = p(entry.hi), t1P = p(t1);
+
+  const gradient = isLong
+    ? `linear-gradient(to right, rgba(255,94,108,.35) 0% ${entryLP}%, rgba(255,181,71,.55) ${entryLP}% ${entryHP}%, rgba(63,209,122,.3) ${entryHP}% 100%)`
+    : `linear-gradient(to right, rgba(63,209,122,.3) 0% ${entryHP}%, rgba(255,181,71,.55) ${entryHP}% ${entryLP}%, rgba(255,94,108,.35) ${entryLP}% 100%)`;
+
+  return `
+    <div style="margin:16px 0 2px;">
+      <div style="font-size:10px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px;">Risk / Reward Map</div>
+      <div style="position:relative;height:12px;border-radius:6px;background:${gradient};">
+        <div style="position:absolute;top:0;bottom:0;left:${t1P}%;width:2px;background:rgba(255,181,71,.9);border-radius:1px;" title="T1"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:10px;">
+        <span style="color:${isLong?"var(--red)":"var(--green)"};">${isLong?"Stop":"T2"} $${f2(isLong?stop:t2)}</span>
+        <span style="color:var(--blue);">Entry $${f2(entry.lo)}–$${f2(entry.hi)}</span>
+        <span style="color:var(--amber);">T1 $${f2(t1)}</span>
+        <span style="color:${isLong?"var(--green)":"var(--red)"};">${isLong?"T2":"Stop"} $${f2(isLong?t2:stop)}</span>
+      </div>
+    </div>`;
+}
+
 export function renderPlan(plan, style, onUpdateSizing) {
   const body = document.getElementById("planBody");
 
@@ -143,7 +177,7 @@ export function renderPlan(plan, style, onUpdateSizing) {
     return;
   }
 
-  const dir = plan.direction === "long" ? "BUY (Long)" : "SELL SHORT";
+  const dir    = plan.direction === "long" ? "BUY (Long)" : "SELL SHORT";
   const dirCls = plan.direction === "long" ? "pos" : "neg";
   const t1 = plan.targets[0], t2 = plan.targets[1], t3 = plan.targets[2];
   const overallR = t2 ? t2.rMult.toFixed(1) : "—";
@@ -168,16 +202,19 @@ export function renderPlan(plan, style, onUpdateSizing) {
         <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">risk: $${f2(plan.stopDist)}/share (1R)</div>
       </div>
       <div class="plan-cell t1">
-        <div class="lbl">Target 1 (scale out)</div>
+        <div class="lbl">Target 1 — scale out 50%</div>
         <div class="val">$${f2(t1.price)} <span style="font-size: 12px; color: var(--text-dim); font-weight: 400;">· ${t1.rMult.toFixed(1)}R</span></div>
+        ${t1.profit != null ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">+$${f0(t1.profit)} potential</div>` : ""}
       </div>
       <div class="plan-cell t2">
-        <div class="lbl">Target 2 (primary)</div>
+        <div class="lbl">Target 2 — primary exit</div>
         <div class="val">$${f2(t2.price)} <span style="font-size: 12px; color: var(--text-dim); font-weight: 400;">· ${t2.rMult.toFixed(1)}R</span></div>
+        ${t2.profit != null ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">+$${f0(t2.profit)} potential</div>` : ""}
       </div>
       ${t3 ? `<div class="plan-cell t3">
-        <div class="lbl">Target 3 (runner)</div>
+        <div class="lbl">Target 3 — runner</div>
         <div class="val">$${f2(t3.price)} <span style="font-size: 12px; color: var(--text-dim); font-weight: 400;">· ${t3.rMult.toFixed(1)}R</span></div>
+        ${t3.profit != null ? `<div style="font-size:11px;color:var(--green);margin-top:2px;">+$${f0(t3.profit)} potential</div>` : ""}
       </div>` : ""}
       <div class="plan-cell size">
         <div class="lbl">Position size <span style="font-size: 11px; color: var(--text-dim);">· Grade ${plan.grade ?? "—"} (${plan.qualityMult != null ? Math.round(plan.qualityMult * 100) + "% of risk" : "full risk"})</span></div>
@@ -185,6 +222,7 @@ export function renderPlan(plan, style, onUpdateSizing) {
         <div style="font-size: 11px; color: var(--text-dim); margin-top: 2px;">$${f0(plan.dollarRisk)} risk on $${f0(plan.accountSize)} acct (${plan.riskPct}%)</div>
       </div>
     </div>
+    ${rrBar(plan)}
     <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
       <span style="font-size: 12px; color: var(--text-dim);">Account: </span>
       <input id="acctInput" type="number" value="${plan.accountSize}" style="width: 100px;" />
@@ -200,6 +238,143 @@ export function renderPlan(plan, style, onUpdateSizing) {
     const risk = parseFloat(document.getElementById("riskInput").value) || 1;
     onUpdateSizing(acct, risk);
   });
+}
+
+/* ================== PRE-TRADE CHECKLIST ================== */
+export function renderChecklist(data, ind, setup, plan) {
+  const el = document.getElementById("checklistBody");
+  if (!el) return;
+  if (!data || !ind || !setup || !plan || plan.direction === "flat") { el.innerHTML = ""; return; }
+
+  const i      = data.closes.length - 1;
+  const price  = data.closes[i];
+  const rsi    = ind.rsi?.[i];
+  const macdH  = ind.macd?.hist?.[i];
+  const sma20  = ind.sma20?.[i];
+  const sma50  = ind.sma50?.[i];
+  const sma200 = ind.sma200?.[i];
+  const vol    = data.volumes[i];
+  const avgVol = data.volumes.slice(-20).reduce((a, b) => a + b, 0) / 20;
+  const volRatio = avgVol > 0 ? vol / avgVol : 1;
+  const isLong = plan.direction === "long";
+  const t1rr   = plan.targets[0]?.rMult ?? 0;
+
+  const items = [];
+  const chk = (label, status, note) => items.push({ label, status, note });
+
+  // 1. Trend
+  if (isLong) {
+    if (sma50 && sma200 && price > sma50 && sma50 > sma200) chk("Uptrend", "pass", "price > SMA50 > SMA200");
+    else if (sma50 && price > sma50)                         chk("Mixed trend", "warn", "above SMA50, SMA200 lags");
+    else                                                     chk("Downtrend", "fail", "entering against trend");
+  } else {
+    if (sma50 && sma200 && price < sma50 && sma50 < sma200) chk("Downtrend", "pass", "price < SMA50 < SMA200");
+    else if (sma50 && price < sma50)                         chk("Mixed trend", "warn", "below SMA50, SMA200 lags");
+    else                                                     chk("Uptrend", "fail", "shorting into uptrend");
+  }
+
+  // 2. RSI zone
+  if (rsi != null) {
+    if (isLong) {
+      if (rsi >= 40 && rsi <= 65)  chk("RSI clear",      "pass", rsi.toFixed(0) + " — optimal entry zone");
+      else if (rsi > 65 && rsi < 75) chk("RSI elevated", "warn", rsi.toFixed(0) + " — approaching overbought");
+      else if (rsi >= 75)            chk("RSI overbought","fail", rsi.toFixed(0) + " — extended, chasing");
+      else                           chk("RSI weak",      "warn", rsi.toFixed(0) + " — possible downside");
+    } else {
+      if (rsi >= 35 && rsi <= 60)   chk("RSI clear",     "pass", rsi.toFixed(0) + " — optimal short zone");
+      else if (rsi < 35 && rsi > 25) chk("RSI near oversold","warn", rsi.toFixed(0) + " — bounce risk");
+      else if (rsi <= 25)            chk("RSI oversold",  "fail", rsi.toFixed(0) + " — shorting capitulation");
+      else                           chk("RSI bullish",   "warn", rsi.toFixed(0) + " — momentum against short");
+    }
+  }
+
+  // 3. MACD
+  if (macdH != null) {
+    if (isLong) {
+      if (macdH > 0.05)             chk("MACD bullish", "pass", "histogram positive");
+      else if (macdH > -0.05)       chk("MACD neutral", "warn", "near zero crossover");
+      else                           chk("MACD bearish", "fail", "histogram negative");
+    } else {
+      if (macdH < -0.05)            chk("MACD bearish", "pass", "histogram negative");
+      else if (macdH < 0.05)        chk("MACD neutral", "warn", "near zero crossover");
+      else                           chk("MACD bullish", "fail", "momentum against short");
+    }
+  }
+
+  // 4. Volume
+  if (volRatio >= 0.9)        chk("Volume confirmed", "pass", volRatio.toFixed(1) + "x average");
+  else if (volRatio >= 0.65)  chk("Volume light",     "warn", volRatio.toFixed(1) + "x — low conviction");
+  else                        chk("Volume thin",      "fail", volRatio.toFixed(1) + "x — avoid entry");
+
+  // 5. SMA20 alignment
+  if (sma20) {
+    const above = price > sma20;
+    if (isLong && above)   chk("SMA20 clear",    "pass", `above $${sma20.toFixed(2)}`);
+    else if (!isLong && !above) chk("SMA20 clear","pass", `below $${sma20.toFixed(2)}`);
+    else                   chk("SMA20 against",  "warn", `${isLong?"below":"above"} $${sma20.toFixed(2)}`);
+  }
+
+  // 6. Confidence score
+  const sc = setup.score ?? 0;
+  if (sc >= 65)      chk("High confidence", "pass", sc.toFixed(0) + "% confluence");
+  else if (sc >= 50) chk("Moderate conf.",  "warn", sc.toFixed(0) + "% confluence");
+  else               chk("Low confidence",  "fail", sc.toFixed(0) + "% — marginal signal");
+
+  // 7. R/R
+  if (t1rr >= 2)     chk("R/R excellent", "pass", t1rr.toFixed(1) + ":1 to T1");
+  else if (t1rr >= 1.5) chk("R/R good",  "pass", t1rr.toFixed(1) + ":1 to T1");
+  else if (t1rr >= 1)   chk("R/R minimum","warn", t1rr.toFixed(1) + ":1 — tight");
+  else                  chk("R/R poor",   "fail", t1rr.toFixed(1) + ":1 — skip");
+
+  const icon = { pass: "✓", warn: "◆", fail: "✗" };
+  el.innerHTML = `<div class="checklist">
+    ${items.map(it => `<div class="check-item ${it.status}" title="${it.note}">
+      <span class="check-icon">${icon[it.status]}</span>
+      <span>${it.label}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+/* ================== AI PLAN DISPLAY ================== */
+export function renderAIPlan(text) {
+  const el = document.getElementById("aiPlanBody");
+  if (!el) return;
+  if (!text) { el.innerHTML = ""; return; }
+
+  // Parse **SECTION** — content blocks
+  const parts = text.split(/\*\*([A-Z ]+)\*\*\s*(?:—\s*)?/);
+  const sections = {};
+  for (let i = 1; i < parts.length; i += 2) {
+    const key = parts[i]?.trim();
+    const val = (parts[i + 1] || "").trim().replace(/\n+$/, "");
+    if (key && val) sections[key] = val;
+  }
+
+  if (!Object.keys(sections).length) {
+    el.innerHTML = `<div style="font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;">${text}</div>`;
+    return;
+  }
+
+  const sec = (key, extraCls = "") => {
+    const body = sections[key];
+    if (!body) return "";
+    return `<div class="ai-plan-section ${extraCls}">
+      <div class="ai-plan-label">${key}</div>
+      <div class="ai-plan-text">${body}</div>
+    </div>`;
+  };
+
+  el.innerHTML = `<div class="ai-plan-grid">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${sec("ENTRY")}${sec("STOP")}
+    </div>
+    ${sec("TARGETS")}
+    ${sec("MANAGEMENT")}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+      ${sec("BULL CASE","ai-plan-bull")}${sec("BEAR CASE","ai-plan-bear")}
+    </div>
+    ${sec("VERDICT","ai-plan-verdict")}
+  </div>`;
 }
 
 /* ================== KEY LEVELS PANEL ================== */

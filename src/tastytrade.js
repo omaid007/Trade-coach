@@ -386,31 +386,61 @@ function renderOrder() {
     return;
   }
 
-  const order = buildOrder();
-  const isBreakout = _plan.key === "breakout_long";
-  const action = _plan.direction === "long" ? "Buy to Open" : "Sell to Open";
-  const tif = _style === "day" ? "Day" : "GTC";
+  const entryOrder  = buildOrder();
+  const isBreakout  = _plan.key === "breakout_long";
+  const isLong      = _plan.direction === "long";
+  const closeAction = isLong ? "Sell to Close" : "Buy to Close";
+  const tif         = _style === "day" ? "Day" : "GTC";
+  const qtys        = splitQty(_plan.shares, _plan.targets.length);
+
+  const targetLegs  = _plan.targets.map((t, i) => ({
+    order: mkLimit(_symbol, qtys[i], t.price, closeAction),
+    price: t.price, qty: qtys[i], rMult: t.rMult,
+  }));
+  const stopLeg = {
+    order: mkStop(_symbol, _plan.shares, _plan.stop, closeAction),
+    price: _plan.stop,
+  };
+
+  const targetLegsHtml = targetLegs.map((t, i) => `
+    <div class="bracket-leg target">
+      <div class="bracket-leg-icon" style="color:var(--green);">T${i + 1}</div>
+      <div class="bracket-leg-body">
+        <div class="bracket-leg-label" style="color:var(--green);">Take-Profit ${i + 1} · GTC Limit</div>
+        <div class="bracket-leg-detail">${t.qty} shares · ${f2(t.rMult)}R reward</div>
+      </div>
+      <div class="bracket-leg-price" style="color:var(--green);">$${f2(t.price)}</div>
+    </div>`).join("");
 
   panel.innerHTML = `
-    <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 8px;">
-      Entry order · account <strong style="color:var(--text);">${_accountNumber}</strong>
+    <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px;">
+      Bracket order · <strong style="color:var(--text);">${_symbol}</strong> · account <strong style="color:var(--text);">${_accountNumber}</strong>
     </div>
-    <div class="ticket" style="margin-bottom: 10px;">
-<span class="k">Symbol:</span>       <span class="v">${_symbol}</span>
-<span class="k">Action:</span>       <span class="v">${action}</span>
-<span class="k">Order type:</span>   <span class="v">${isBreakout ? "Stop Limit" : "Limit"}</span>
-<span class="k">Quantity:</span>     <span class="v">${_plan.shares} shares</span>${isBreakout ? `
-<span class="k">Stop trigger:</span> <span class="v">$${f2(_plan.entry.lo)}</span>` : ""}
-<span class="k">Limit price:</span>  <span class="v">$${f2(_plan.entry.hi)}</span>
-<span class="k">Time-in-force:</span> <span class="v">${tif}</span>
+    <div class="bracket-preview">
+      <div class="bracket-leg entry">
+        <div class="bracket-leg-icon" style="color:var(--blue);">→</div>
+        <div class="bracket-leg-body">
+          <div class="bracket-leg-label" style="color:var(--blue);">Entry · ${isBreakout ? "Stop Limit" : "Limit"} · ${tif}</div>
+          <div class="bracket-leg-detail">${_plan.shares} shares · ${isLong ? "Buy to Open" : "Sell to Open"}${isBreakout ? ` · trigger $${f2(_plan.entry.lo)}` : ""}</div>
+        </div>
+        <div class="bracket-leg-price" style="color:var(--blue);">$${f2(_plan.entry.hi)}</div>
+      </div>
+      <div class="bracket-leg stop">
+        <div class="bracket-leg-icon" style="color:var(--red);">✕</div>
+        <div class="bracket-leg-body">
+          <div class="bracket-leg-label" style="color:var(--red);">Stop-Loss · GTC Stop (placed on fill)</div>
+          <div class="bracket-leg-detail">${_plan.shares} shares · ${closeAction}</div>
+        </div>
+        <div class="bracket-leg-price" style="color:var(--red);">$${f2(_plan.stop)}</div>
+      </div>
+      ${targetLegsHtml}
     </div>
-    <div class="disclaimer" style="margin-bottom: 12px; margin-top: 0;">
-      After fill, manually place a stop-loss at <strong>$${f2(_plan.stop)}</strong>
-      and take-profit at <strong>$${f2(_plan.targets[1].price)}</strong> as a separate OCO order in Tastytrade.
+    <div class="disclaimer" style="margin-bottom: 12px; margin-top: 0; font-size:11px;">
+      Entry is placed immediately. Stop-loss and take-profit orders are placed automatically once the entry fills (monitored via Auto-Trader).
     </div>
-    <div style="display: flex; gap: 8px; align-items: center;">
-      <button id="tt-dry-run" class="primary" style="font-size: 12px;">Validate order</button>
-      <button id="tt-place" style="font-size: 12px; display:none;">⚡ Place Order</button>
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+      <button id="tt-dry-run" class="primary" style="font-size: 12px;">Validate entry</button>
+      <button id="tt-arm-bracket" style="font-size: 12px; display:none;">⚡ Arm Bracket</button>
     </div>
     <div id="tt-result" style="margin-top: 10px;"></div>`;
 
@@ -421,51 +451,54 @@ function renderOrder() {
     btn.disabled = true;
     resultEl.innerHTML = "";
     try {
-      const r = await dryRun(order);
-      const bp = Math.abs(parseFloat(r.data?.["buying-power-effect"]?.["change-in-buying-power"] ?? 0));
+      const r = await dryRun(entryOrder);
+      const bp   = Math.abs(parseFloat(r.data?.["buying-power-effect"]?.["change-in-buying-power"] ?? 0));
       const fees = parseFloat(r.data?.["fee-calculation"]?.["total-fees"] ?? 0);
       resultEl.innerHTML = `
         <div class="tt-result-ok">
-          <div style="color:var(--green); font-weight:600; margin-bottom:6px;">✓ Order validated</div>
+          <div style="color:var(--green); font-weight:600; margin-bottom:6px;">✓ Entry validated</div>
           <div>Buying power impact: <strong>$${f2(bp)}</strong></div>
           <div>Estimated fees: <strong>$${f2(fees)}</strong></div>
         </div>
         <div style="margin-top:8px; font-size:12px; color:var(--amber);">
-          Review carefully. This will be a real order on your live account.
+          Arming places a real limit order and auto-attaches stop + targets on fill.
         </div>`;
-      el("tt-place").style.display = "inline-block";
+      el("tt-arm-bracket").style.display = "inline-block";
     } catch (e) {
       resultEl.innerHTML = `<span class="error">${e.message}</span>`;
     } finally {
-      btn.textContent = "Validate order";
+      btn.textContent = "Validate entry";
       btn.disabled = false;
     }
   });
 
-  el("tt-place").addEventListener("click", async () => {
-    const btn = el("tt-place");
-    const resultEl = el("tt-result");
-    if (!confirm(`Place ${_plan.shares} share(s) of ${_symbol} on Tastytrade?\n\nThis is a real order on your live account.`)) return;
-    btn.textContent = "Placing…";
-    btn.disabled = true;
-    try {
-      const r = await placeOrder(order);
-      const orderId = r.data?.order?.id ?? r.data?.id ?? "submitted";
-      resultEl.innerHTML = `
-        <div class="tt-result-ok">
-          <div style="color:var(--green); font-weight:700;">✓ Order placed!</div>
-          <div style="margin-top:4px;">Order ID: <strong>${orderId}</strong></div>
-          <div style="margin-top:4px; font-size:12px; color:var(--text-dim);">
-            Check Tastytrade for status. Don't forget your stop-loss OCO.
-          </div>
-        </div>`;
-      btn.style.display = "none";
-    } catch (e) {
-      resultEl.innerHTML = `<span class="error">${e.message}</span>`;
-      btn.textContent = "⚡ Place Order";
-      btn.disabled = false;
-    }
+  el("tt-arm-bracket").addEventListener("click", () => {
+    _doArmBracket(el("tt-result"));
   });
+}
+
+function _doArmBracket(resultEl) {
+  if (!_plan || AT.state !== "idle") {
+    if (resultEl) resultEl.innerHTML = `<span class="error">Auto-Trader is already active. Disarm it first.</span>`;
+    return;
+  }
+  const { shares, entry, stop, targets, direction } = _plan;
+  if (!confirm(
+    `ARM Bracket — ${_symbol}\n\n` +
+    `${direction === "long" ? "BUY" : "SELL"} ${shares} shares\n` +
+    `Entry (limit): $${f2(entry.hi)}\n` +
+    `Stop-loss (auto GTC): $${f2(stop)}\n` +
+    `Targets (auto GTC): ${targets.map(t => "$" + f2(t.price)).join(" / ")}\n\n` +
+    `This places REAL orders on your live Tastytrade account.\nMonitor progress in the Auto-Trader tab.`
+  )) return;
+  armEquity();
+  if (resultEl) resultEl.innerHTML = `
+    <div class="tt-result-ok">
+      <div style="color:var(--green); font-weight:600;">✓ Bracket armed!</div>
+      <div style="margin-top:4px; font-size:12px; color:var(--text-dim);">
+        Entry order placed. Switch to the <strong>Auto-Trader</strong> tab to monitor fill and bracket placement.
+      </div>
+    </div>`;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -1084,4 +1117,12 @@ export function atUpdateIndicators(ind) {
 
 export function atUpdateOptionsFlow(flow) {
   AT.optionsFlow = flow;
+}
+
+export function ttIsConnected() {
+  return !!(  _session && _accountNumber);
+}
+
+export function ttArmBracket() {
+  _doArmBracket(null);
 }

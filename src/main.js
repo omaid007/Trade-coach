@@ -5,19 +5,19 @@
  * DOM logic lives in render.js. This file is the conductor.
  */
 
-import { fetchCommentary, buildSnapshot } from "./ai.js";
+import { fetchCommentary, buildSnapshot, buildPlanSnapshot, fetchAIPlan } from "./ai.js";
 import { initSettings, applyStoredTheme, getDefaults } from "./settings.js";
 import { STYLE_CONFIG } from "./config.js";
 import { fetchOHLC, fetchConfig, setAuthPassword, apiFetch } from "./api.js";
-import { initTastytrade, updateTastytradeOrder, atPriceTick, atUpdateIndicators, atUpdateOptionsFlow } from "./tastytrade.js";
+import { initTastytrade, updateTastytradeOrder, atPriceTick, atUpdateIndicators, atUpdateOptionsFlow, ttIsConnected, ttArmBracket } from "./tastytrade.js";
 import { initPaperTrading, paperUpdatePlan, paperTabActivated, paperTabDeactivated } from "./paper.js";
 import { initWatchlist, watchlistTabActivated, watchlistTabDeactivated } from "./watchlist.js";
+import { initShortTerm, shortTermTabActivated, shortTermTabDeactivated } from "./shortterm.js";
+import { initLongTerm, longTermTabActivated, longTermTabDeactivated } from "./longterm.js";
 import { initJournal, journalUpdatePlan } from "./journal.js";
 import { initAlerts, alertsSetSymbol } from "./alerts.js";
 import { runBacktest } from "./backtest.js";
 import { initAutocomplete } from "./autocomplete.js";
-import { initPortfolio, portfolioTabActivated, portfolioTabDeactivated } from "./portfolio.js";
-import { initScreener } from "./screener.js";
 import { getSession } from "./session.js";
 import { startStream, stopStream } from "./streamer.js";
 import { fetchOptionsFlow } from "./options.js";
@@ -31,6 +31,8 @@ import {
   renderTV,
   renderIndicators,
   renderPlan,
+  renderChecklist,
+  renderAIPlan,
   renderLevels,
   renderReport,
   renderExecution,
@@ -150,7 +152,11 @@ async function analyze() {
   stopNewsRefresh();
   STATE.symbol = sym;
   _aiCache = null;
+  _aiPlanCache = null;
   document.getElementById("aiCommentary").textContent = "";
+  document.getElementById("aiPlanBody")?.replaceChildren();
+  document.getElementById("aiPlanStatus")?.replaceChildren();
+  document.getElementById("aiPlanSection")?.style && (document.getElementById("aiPlanSection").style.display = "none");
   const cfg = STYLE_CONFIG[STATE.style];
 
   document.getElementById("oneLiner").innerHTML =
@@ -181,6 +187,11 @@ async function analyze() {
     renderLevels(data, STATE.ind, sym);
     renderReport(data, STATE.ind, STATE.setups, STATE.plan, STATE.style);
     renderPlan(STATE.plan, STATE.style, onUpdateSizing);
+    syncRiskSelectorUI();
+    renderChecklist(STATE.data, STATE.ind, STATE.setups[0], STATE.plan);
+    const aiPlanSec = document.getElementById("aiPlanSection");
+    if (aiPlanSec) aiPlanSec.style.display = STATE.plan?.direction !== "flat" ? "" : "none";
+    updateExecuteFromPlan();
     renderExecution(STATE.plan, sym, STATE.style);
     updateTastytradeOrder(STATE.plan, sym, STATE.style);
     atUpdateIndicators(STATE.ind);
@@ -215,6 +226,47 @@ function onUpdateSizing(accountSize, riskPct) {
   renderPlan(STATE.plan, STATE.style, onUpdateSizing);
   renderExecution(STATE.plan, STATE.symbol, STATE.style);
   renderCalculators(STATE.plan);
+  updateExecuteFromPlan();
+}
+
+/* ---------- RISK SELECTOR ---------- */
+const RISK_PROFILES = { conservative: 0.5, moderate: 1, aggressive: 2 };
+
+function initRiskSelector() {
+  const stored = localStorage.getItem("risk_profile") || "moderate";
+  applyRiskProfile(stored, false);
+  document.querySelectorAll(".risk-pill").forEach(btn => {
+    btn.addEventListener("click", () => applyRiskProfile(btn.dataset.risk, true));
+  });
+}
+
+function applyRiskProfile(profile, save) {
+  document.querySelectorAll(".risk-pill").forEach(b => b.classList.toggle("active", b.dataset.risk === profile));
+  if (profile !== "custom") {
+    STATE.riskPct = RISK_PROFILES[profile] ?? STATE.riskPct;
+  }
+  if (save) {
+    localStorage.setItem("risk_profile", profile);
+    if (STATE.data && STATE.setups[0]) onUpdateSizing(STATE.accountSize, STATE.riskPct);
+  }
+}
+
+function syncRiskSelectorUI() {
+  const stored = localStorage.getItem("risk_profile") || "moderate";
+  document.querySelectorAll(".risk-pill").forEach(b => b.classList.toggle("active", b.dataset.risk === stored));
+  const row = document.getElementById("riskSelectorRow");
+  if (row) row.style.display = "";
+}
+
+/* ---------- EXECUTE FROM PLAN ---------- */
+function updateExecuteFromPlan() {
+  const row    = document.getElementById("executeFromPlanRow");
+  const status = document.getElementById("executeFromPlanStatus");
+  if (!row) return;
+  const hasActivePlan = STATE.plan && STATE.plan.direction !== "flat" && STATE.plan.shares > 0;
+  const connected     = ttIsConnected();
+  row.style.display   = hasActivePlan && connected ? "" : "none";
+  if (status) status.textContent = "";
 }
 
 /* ---------- EARNINGS ---------- */
@@ -241,7 +293,8 @@ async function fetchEarnings(sym) {
 }
 
 /* ---------- AI COMMENTARY ---------- */
-let _aiCache = null; // { key, text }
+let _aiCache     = null; // { key, text }
+let _aiPlanCache = null; // { key, text }
 
 async function requestAI() {
   const btn = document.getElementById("aiBtn");
@@ -268,6 +321,35 @@ async function requestAI() {
   } finally {
     btn.disabled = false;
     btn.textContent = "✦ Ask AI";
+  }
+}
+
+/* ---------- AI PLAN ---------- */
+async function requestAIPlan() {
+  const btn    = document.getElementById("aiPlanBtn");
+  const status = document.getElementById("aiPlanStatus");
+
+  if (!STATE.data || !STATE.setups[0] || !STATE.plan || STATE.plan.direction === "flat") return;
+
+  const cacheKey = `${STATE.symbol}:${STATE.style}`;
+  if (_aiPlanCache?.key === cacheKey) { renderAIPlan(_aiPlanCache.text); return; }
+
+  btn.disabled    = true;
+  btn.textContent = "✦ Analyzing…";
+  if (status) status.textContent = "Sending to Claude…";
+
+  try {
+    const snapshot = buildPlanSnapshot(STATE.data, STATE.ind, STATE.setups[0], STATE.plan, STATE.style);
+    const text     = await fetchAIPlan(snapshot);
+    _aiPlanCache   = { key: cacheKey, text };
+    renderAIPlan(text);
+    if (status) status.textContent = "";
+  } catch (e) {
+    if (status) status.textContent = `Error: ${e.message}`;
+    renderAIPlan("");
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "✦ Generate AI Plan";
   }
 }
 
@@ -302,9 +384,10 @@ let _activeMain = "home";
 
 function switchMainTab(name) {
   if (name === _activeMain) return;
-  if (_activeMain === "paper")     paperTabDeactivated();
-  if (_activeMain === "watchlist") watchlistTabDeactivated();
-  if (_activeMain === "portfolio") portfolioTabDeactivated();
+  if (_activeMain === "paper")      paperTabDeactivated();
+  if (_activeMain === "watchlist")  watchlistTabDeactivated();
+  if (_activeMain === "shortterm")  shortTermTabDeactivated();
+  if (_activeMain === "longterm")   longTermTabDeactivated();
 
   document.querySelectorAll(".main-tab").forEach(b =>
     b.classList.toggle("active", b.dataset.main === name)
@@ -314,9 +397,10 @@ function switchMainTab(name) {
   });
 
   _activeMain = name;
-  if (name === "paper")     paperTabActivated();
-  if (name === "watchlist") watchlistTabActivated();
-  if (name === "portfolio") portfolioTabActivated();
+  if (name === "paper")      paperTabActivated();
+  if (name === "watchlist")  watchlistTabActivated();
+  if (name === "shortterm")  shortTermTabActivated();
+  if (name === "longterm")   longTermTabActivated();
 }
 
 /* ---------- EVENT WIRING ---------- */
@@ -362,6 +446,20 @@ function wireEvents() {
 
   // AI commentary
   document.getElementById("aiBtn").addEventListener("click", requestAI);
+
+  // AI plan
+  document.getElementById("aiPlanBtn").addEventListener("click", requestAIPlan);
+
+  // Execute bracket from plan card
+  document.getElementById("executeFromPlanBtn")?.addEventListener("click", () => {
+    const status = document.getElementById("executeFromPlanStatus");
+    if (!ttIsConnected()) {
+      if (status) status.textContent = "Not connected — go to the Tastytrade tab to connect first.";
+      return;
+    }
+    if (status) status.textContent = "";
+    ttArmBracket();
+  });
 }
 
 /* ---------- AUTH ---------- */
@@ -426,19 +524,26 @@ document.querySelectorAll(".style-toggle button").forEach(b => {
 });
 
 initSettings();
+initRiskSelector();
 initTastytrade();
 initPaperTrading();
 
-const _goAnalyze = (sym) => {
+const _goAnalyze = (sym, style) => {
   document.getElementById("tickerInput").value = sym;
+  if (style && style !== STATE.style) {
+    STATE.style = style;
+    document.querySelectorAll(".style-toggle button").forEach(b =>
+      b.classList.toggle("active", b.dataset.style === style)
+    );
+  }
   switchMainTab("home");
   analyze();
 };
 
 initAutocomplete(document.getElementById("tickerInput"), _goAnalyze);
 initWatchlist(_goAnalyze);
-initPortfolio(_goAnalyze);
-initScreener(_goAnalyze);
+initShortTerm(_goAnalyze);
+initLongTerm(_goAnalyze);
 initJournal();
 initAlerts();
 renderSession();
