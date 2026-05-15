@@ -1273,3 +1273,61 @@ ol.steps li code {
 .bracket-leg.entry  { border-color: var(--blue);  background: rgba(91,157,255,0.06); }
 .bracket-leg.stop   { border-color: var(--red);   background: rgba(255,94,108,0.06); }
 .bracket-leg.target { border-color: var(--green); background: rgba(63,209,122,0.06); }
+
+/* ── Agent Analysis Results ── */
+.agent-rating {
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.agent-section {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+}
+
+.agent-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+
+.agent-body-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.agent-debate-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+@media (max-width: 600px) {
+  .agent-debate-grid { grid-template-columns: 1fr; }
+}
+
+.agent-bull { border-color: rgba(63, 209, 122, 0.35) !important; background: rgba(63, 209, 122, 0.04) !important; }
+.agent-bull .agent-section-label { color: var(--green); }
+
+.agent-bear { border-color: rgba(255, 94, 108, 0.35) !important; background: rgba(255, 94, 108, 0.04) !important; }
+.agent-bear .agent-section-label { color: var(--red); }
+
+.agent-verdict {
+  border-color: var(--blue) !important;
+  background: rgba(91, 157, 255, 0.05) !important;
+  border-left-width: 3px !important;
+}
+
+.agent-verdict .agent-section-label { color: var(--blue); }
+.agent-verdict .agent-body-text { font-weight: 500; }

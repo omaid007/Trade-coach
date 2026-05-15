@@ -864,3 +864,91 @@ export function renderBacktest(result, setupName) {
       Heuristic pattern-matching on historical bars — not a real backtest. Educational only.
     </div>`;
 }
+
+// ─── Agent Analysis Results ───────────────────────────────────────────────────
+
+export function renderAgentResult(data) {
+  const el = document.getElementById("agents-result");
+  if (!el) return;
+
+  const ratingColor = {
+    "Buy": "var(--green)", "Strong Buy": "var(--green)", "Overweight": "var(--green)",
+    "Bullish": "var(--green)",
+    "Sell": "var(--red)", "Strong Sell": "var(--red)", "Underweight": "var(--red)",
+    "Bearish": "var(--red)",
+    "Hold": "var(--amber)",
+  }[data.rating] || "var(--text)";
+
+  const riskLabel = { conservative: "Conservative", moderate: "Moderate", aggressive: "Aggressive" };
+  const riskColor = { conservative: "var(--green)", moderate: "var(--blue)", aggressive: "var(--red)" };
+  const recRisk = data.risk_profile_recommendation;
+
+  const scoreBar = (score) => {
+    if (score == null) return "";
+    const pct = Math.max(0, Math.min(100, score));
+    const cls = pct >= 60 ? "bull" : pct >= 40 ? "" : "bear";
+    return `<div style="display:flex; align-items:center; gap:8px; margin-top:4px;">
+      <div style="flex:1; height:6px; border-radius:3px; background:var(--bg); overflow:hidden;">
+        <div style="width:${pct}%; height:100%; background:${pct >= 60 ? "var(--green)" : pct >= 40 ? "var(--amber)" : "var(--red)"};"></div>
+      </div>
+      <span class="${cls}" style="font-size:11px; font-weight:700;">${pct}</span>
+    </div>`;
+  };
+
+  const section = (label, content, cls = "") => content ? `
+    <div class="agent-section${cls ? " " + cls : ""}">
+      <div class="agent-section-label">${label}</div>
+      <div class="agent-section-body">${content}</div>
+    </div>` : "";
+
+  const trunc = (s, n = 600) => !s ? "" : s.length > n ? s.slice(0, n) + "…" : s;
+
+  el.style.display = "";
+  el.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+      <div>
+        <span style="font-weight:700; font-size:15px; color:var(--text);">${data.symbol}</span>
+        <span style="font-size:12px; color:var(--text-dim); margin-left:8px;">${data.date}</span>
+      </div>
+      ${data.rating ? `<div class="agent-rating" style="color:${ratingColor};">${data.rating}</div>` : ""}
+    </div>
+
+    ${data.price_target || data.stop_loss ? `
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+      ${data.price_target ? `<div class="plan-cell" style="flex:1; min-width:100px;"><div class="lbl">Price Target</div><div class="val pos">$${data.price_target.toFixed(2)}</div></div>` : ""}
+      ${data.stop_loss    ? `<div class="plan-cell" style="flex:1; min-width:100px;"><div class="lbl">Stop-Loss</div><div class="val neg">$${data.stop_loss.toFixed(2)}</div></div>` : ""}
+    </div>` : ""}
+
+    ${data.sentiment_report ? section("Sentiment Analysis" + (data.sentiment_score != null ? ` · ${data.sentiment_score}/100` : ""), scoreBar(data.sentiment_score) + `<div class="agent-body-text">${trunc(data.sentiment_report)}</div>`) : ""}
+
+    <div class="agent-debate-grid">
+      ${data.bull_argument ? `
+      <div class="agent-section agent-bull">
+        <div class="agent-section-label">Bull Researcher</div>
+        <div class="agent-body-text">${trunc(data.bull_argument)}</div>
+      </div>` : ""}
+      ${data.bear_argument ? `
+      <div class="agent-section agent-bear">
+        <div class="agent-section-label">Bear Researcher</div>
+        <div class="agent-body-text">${trunc(data.bear_argument)}</div>
+      </div>` : ""}
+    </div>
+
+    ${data.research_decision ? section("Research Manager Decision", `<div class="agent-body-text">${trunc(data.research_decision)}</div>`) : ""}
+
+    ${data.risk_decision ? `
+    <div class="agent-section">
+      <div class="agent-section-label">Risk Analysis${recRisk ? ` · Recommendation: <span style="color:${riskColor[recRisk] || "var(--text)"}; font-weight:700;">${riskLabel[recRisk] || recRisk}</span>` : ""}</div>
+      <div class="agent-body-text">${trunc(data.risk_decision)}</div>
+    </div>` : ""}
+
+    ${data.final_decision ? `
+    <div class="agent-section agent-verdict">
+      <div class="agent-section-label">Portfolio Manager Final Decision</div>
+      <div class="agent-body-text">${trunc(data.final_decision, 1000)}</div>
+    </div>` : ""}
+
+    <div style="font-size:11px; color:var(--text-faint); margin-top:10px;">
+      AI-generated analysis via Claude + TradingAgents. Educational only — not investment advice.
+    </div>`;
+}

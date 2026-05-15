@@ -911,6 +911,36 @@ app.get("/api/fundamentals", requireAuth, async (req, res) => {
   res.status(502).json({ error: "Unable to fetch fundamentals — market data unavailable." });
 });
 
+// ─── Agent service proxy ─────────────────────────────────────────────────────
+
+const AGENTS_URL    = process.env.AGENTS_URL    || "";
+const AGENTS_SECRET = process.env.AGENTS_SECRET || "";
+
+app.post("/api/agents/analyze", express.json(), requireAuth, async (req, res) => {
+  if (!AGENTS_URL) {
+    return res.status(503).json({ error: "Agent service not configured — add AGENTS_URL to Railway env vars." });
+  }
+  const { symbol, date } = req.body || {};
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+
+  try {
+    const r = await fetch(`${AGENTS_URL}/analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(AGENTS_SECRET ? { "x-agents-secret": AGENTS_SECRET } : {}),
+      },
+      body: JSON.stringify({ symbol, date: date || null }),
+      signal: AbortSignal.timeout(250_000),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || data.error || `Agent service error ${r.status}`);
+    res.json(data);
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // Serve production build
 app.use(express.static(join(__dirname, "../dist")));
 

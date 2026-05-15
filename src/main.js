@@ -8,7 +8,7 @@
 import { fetchCommentary, buildSnapshot, buildPlanSnapshot, fetchAIPlan } from "./ai.js";
 import { initSettings, applyStoredTheme, getDefaults } from "./settings.js";
 import { STYLE_CONFIG } from "./config.js";
-import { fetchOHLC, fetchConfig, setAuthPassword, apiFetch } from "./api.js";
+import { fetchOHLC, fetchConfig, setAuthPassword, apiFetch, authHeaders } from "./api.js";
 import { initTastytrade, updateTastytradeOrder, atPriceTick, atUpdateIndicators, atUpdateOptionsFlow, ttIsConnected, ttArmBracket } from "./tastytrade.js";
 import { initPaperTrading, paperUpdatePlan, paperTabActivated, paperTabDeactivated } from "./paper.js";
 import { initWatchlist, watchlistTabActivated, watchlistTabDeactivated } from "./watchlist.js";
@@ -33,6 +33,7 @@ import {
   renderPlan,
   renderChecklist,
   renderAIPlan,
+  renderAgentResult,
   renderLevels,
   renderReport,
   renderExecution,
@@ -188,6 +189,11 @@ async function analyze() {
     renderReport(data, STATE.ind, STATE.setups, STATE.plan, STATE.style);
     renderPlan(STATE.plan, STATE.style, onUpdateSizing);
     syncRiskSelectorUI();
+    _agentCache = null;
+    const agentsBtn = document.getElementById("agentsRunBtn");
+    if (agentsBtn) { agentsBtn.disabled = false; agentsBtn.textContent = "Run Agent Analysis"; }
+    document.getElementById("agents-result")?.style && (document.getElementById("agents-result").style.display = "none");
+    document.getElementById("agents-launch")?.style && (document.getElementById("agents-launch").style.display = "");
     renderChecklist(STATE.data, STATE.ind, STATE.setups[0], STATE.plan);
     const aiPlanSec = document.getElementById("aiPlanSection");
     if (aiPlanSec) aiPlanSec.style.display = STATE.plan?.direction !== "flat" ? "" : "none";
@@ -353,6 +359,56 @@ async function requestAIPlan() {
   }
 }
 
+/* ---------- AGENT ANALYSIS ---------- */
+let _agentCache = null; // { key, data }
+
+async function runAgentAnalysis() {
+  if (!STATE.symbol) return;
+  const btn    = document.getElementById("agentsRunBtn");
+  const launch = document.getElementById("agents-launch");
+  const result = document.getElementById("agents-result");
+  if (!btn) return;
+
+  const cacheKey = STATE.symbol;
+  if (_agentCache?.key === cacheKey) {
+    renderAgentResult(_agentCache.data);
+    if (result) result.style.display = "";
+    if (launch) launch.style.display = "none";
+    return;
+  }
+
+  btn.disabled    = true;
+  btn.textContent = "Running agents… (1–3 min)";
+  if (result) result.style.display = "none";
+
+  try {
+    const r = await fetch("/api/agents/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeaders() },
+      body: JSON.stringify({ symbol: STATE.symbol }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `Agent service error ${r.status}`);
+    _agentCache = { key: cacheKey, data };
+    renderAgentResult(data);
+    if (result) result.style.display = "";
+    if (launch) launch.style.display = "none";
+
+    // If agents recommend a risk profile, apply it
+    if (data.risk_profile_recommendation) {
+      applyRiskProfile(data.risk_profile_recommendation, true);
+    }
+  } catch (e) {
+    if (result) {
+      result.style.display = "";
+      result.innerHTML = `<span class="error">Agent analysis failed: ${e.message}</span>`;
+    }
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = "Run Agent Analysis";
+  }
+}
+
 /* ---------- COPY TICKET ---------- */
 function copyTicket() {
   const plan = STATE.plan;
@@ -449,6 +505,9 @@ function wireEvents() {
 
   // AI plan
   document.getElementById("aiPlanBtn").addEventListener("click", requestAIPlan);
+
+  // Agent analysis
+  document.getElementById("agentsRunBtn")?.addEventListener("click", runAgentAnalysis);
 
   // Execute bracket from plan card
   document.getElementById("executeFromPlanBtn")?.addEventListener("click", () => {
