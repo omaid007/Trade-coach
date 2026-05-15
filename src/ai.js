@@ -43,7 +43,7 @@ export function buildSnapshot(data, ind, setup, plan, style) {
     else if (macdH1 > 0 && macdH < 0)     macd = "bearish crossover";
   }
 
-  const entryMid = plan ? (plan.entry.lo + plan.entry.hi) / 2 : price;
+  const entryMid = (plan?.entry) ? (plan.entry.lo + plan.entry.hi) / 2 : price;
   const t1price  = plan?.targets?.[0]?.price;
   const rr       = plan && plan.stop ? Math.abs(entryMid - (t1price ?? entryMid)) / Math.abs(entryMid - plan.stop) : null;
 
