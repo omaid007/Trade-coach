@@ -1331,3 +1331,45 @@ ol.steps li code {
 
 .agent-verdict .agent-section-label { color: var(--blue); }
 .agent-verdict .agent-body-text { font-weight: 500; }
+
+/* ── Journal enhancements ── */
+.jnl-summary-card { padding: 16px 20px; }
+
+.jnl-row { transition: background 0.1s ease; }
+.jnl-row:hover { background: var(--bg-elev-2); cursor: pointer; }
+.jnl-row-active { background: var(--bg-elev-2); }
+
+.jnl-expand-row td { background: var(--bg-elev-2); border-top: none; }
+.jnl-expand-body {
+  padding: 6px 4px 2px;
+  border-left: 2px solid var(--blue);
+  padding-left: 10px;
+}
+
+.jnl-note-text {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  margin-bottom: 8px;
+}
+
+.jnl-close-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.jnl-expand-btn {
+  background: none;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  color: var(--text-dim);
+  border-radius: 4px;
+  font-size: 11px;
+  padding: 2px 7px;
+  margin-right: 2px;
+}
+.jnl-expand-btn:hover { border-color: var(--blue); color: var(--blue); }
