@@ -9,7 +9,7 @@ import { fetchCommentary, buildSnapshot, buildPlanSnapshot, fetchAIPlan } from "
 import { initSettings, applyStoredTheme, getDefaults } from "./settings.js";
 import { STYLE_CONFIG } from "./config.js";
 import { fetchOHLC, fetchConfig, setAuthPassword, apiFetch, authHeaders } from "./api.js";
-import { initTastytrade, updateTastytradeOrder, atPriceTick, atUpdateIndicators, atUpdateOptionsFlow, ttIsConnected, ttArmBracket } from "./tastytrade.js";
+import { initTastytrade, updateTastytradeOrder, atPriceTick, atUpdateIndicators, atUpdateOptionsFlow, ttIsConnected, ttArmBracket, ttGetNetLiq } from "./tastytrade.js";
 import { initPaperTrading, paperUpdatePlan, paperTabActivated, paperTabDeactivated } from "./paper.js";
 import { initWatchlist, watchlistTabActivated, watchlistTabDeactivated } from "./watchlist.js";
 import { initShortTerm, shortTermTabActivated, shortTermTabDeactivated } from "./shortterm.js";
@@ -660,6 +660,22 @@ document.querySelectorAll(".style-toggle button").forEach(b => {
 initSettings();
 initRiskSelector();
 initTastytrade();
+
+// When Tastytrade loads live balances, adopt net liquidation as the account size
+// so share counts reflect the real account rather than the manual settings value.
+document.addEventListener("tt-balance-updated", (e) => {
+  const netLiq = e.detail?.netLiq;
+  if (netLiq > 0) {
+    STATE.accountSize = netLiq;
+    if (STATE.data && STATE.setups[0]) onUpdateSizing(STATE.accountSize, STATE.riskPct);
+    // Show a subtle notice in the plan panel
+    const notice = document.getElementById("tt-sizing-notice");
+    if (notice) {
+      notice.textContent = `Sizing from Tastytrade · Net Liq $${f2(netLiq)}`;
+      notice.style.display = "block";
+    }
+  }
+});
 initPaperTrading();
 
 const _goAnalyze = (sym, style) => {

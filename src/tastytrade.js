@@ -7,6 +7,7 @@ let _session       = sessionStorage.getItem("tt_session")  || localStorage.getIt
 let _accountNumber = sessionStorage.getItem("tt_account")  || localStorage.getItem("tt_account")  || null;
 let _rememberedUser = localStorage.getItem("tt_username") || null;
 let _accounts = [];
+let _balances = null;   // cached { netLiq, cashBalance, buyingPower }
 let _plan = null;
 let _symbol = null;
 let _style = null;
@@ -80,7 +81,11 @@ async function fetchAccounts() {
 }
 
 async function fetchBalances() {
-  return ttFetch(`/accounts/${_accountNumber}/balances`);
+  const b = await ttFetch(`/accounts/${_accountNumber}/balances`);
+  _balances = b;
+  // Notify main.js so it can update STATE.accountSize
+  document.dispatchEvent(new CustomEvent("tt-balance-updated", { detail: b }));
+  return b;
 }
 
 async function dryRun(order) {
@@ -270,9 +275,11 @@ function renderConnect() {
   async function onConnected() {
     await fetchAccounts();
     setStatus("connected", "bull");
-    renderConnect(); // re-render to show remembered state if applicable
+    renderConnect();
     renderAccount();
     setTab("account");
+    // Auto-load balances so order sizing is live immediately
+    if (_accountNumber) fetchBalances().catch(() => {});
   }
 
   function showOtpStep() {
@@ -290,6 +297,31 @@ function renderConnect() {
     el("tt-step-credentials").style.display = "flex";
     el("tt-login-error").style.display = "none";
   });
+}
+
+// ─── Balance renderer (shared by Account tab + auto-fetch) ───────────────────
+
+function renderBalances(b) {
+  const wrap = el("tt-balances");
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 8px;">
+      <div class="plan-cell" style="flex:1; min-width:120px;">
+        <div class="lbl">Net Liquidation</div>
+        <div class="val">$${f2(b.netLiq)}</div>
+      </div>
+      <div class="plan-cell" style="flex:1; min-width:120px;">
+        <div class="lbl">Cash Balance</div>
+        <div class="val">$${f2(b.cashBalance)}</div>
+      </div>
+      <div class="plan-cell" style="flex:1; min-width:120px;">
+        <div class="lbl">Buying Power</div>
+        <div class="val">$${f2(b.buyingPower)}</div>
+      </div>
+    </div>
+    <div style="font-size:11px; color:var(--text-dim);">
+      Position sizing in the Order tab uses your Net Liquidation value ($${f2(b.netLiq)}).
+    </div>`;
 }
 
 // ─── Render: Account tab ──────────────────────────────────────────────────────
@@ -324,9 +356,16 @@ function renderAccount() {
   el("tt-account-select").addEventListener("change", () => {
     _accountNumber = el("tt-account-select").value;
     sessionStorage.setItem("tt_account", _accountNumber);
-    el("tt-balances").innerHTML =
-      `<p style="color: var(--text-faint); font-size: 13px; margin:0;">Account changed — click "Load balances" to refresh.</p>`;
+    if (_rememberedUser) localStorage.setItem("tt_account", _accountNumber);
+    _balances = null;
+    el("tt-balances").innerHTML = `<p style="color: var(--text-faint); font-size: 13px; margin:0;">Loading…</p>`;
+    fetchBalances()
+      .then(b => renderBalances(b))
+      .catch(e => { el("tt-balances").innerHTML = `<span class="error">${e.message}</span>`; });
   });
+
+  // Render cached balances immediately if available
+  if (_balances) renderBalances(_balances);
 
   el("tt-load-bal").addEventListener("click", async () => {
     const btn = el("tt-load-bal");
@@ -334,25 +373,11 @@ function renderAccount() {
     btn.disabled = true;
     try {
       const b = await fetchBalances();
-      el("tt-balances").innerHTML = `
-        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-          <div class="plan-cell" style="flex:1; min-width:120px;">
-            <div class="lbl">Net Liquidation</div>
-            <div class="val">$${f2(b.netLiq)}</div>
-          </div>
-          <div class="plan-cell" style="flex:1; min-width:120px;">
-            <div class="lbl">Cash Balance</div>
-            <div class="val">$${f2(b.cashBalance)}</div>
-          </div>
-          <div class="plan-cell" style="flex:1; min-width:120px;">
-            <div class="lbl">Buying Power</div>
-            <div class="val">$${f2(b.buyingPower)}</div>
-          </div>
-        </div>`;
+      renderBalances(b);
     } catch (e) {
       el("tt-balances").innerHTML = `<span class="error">${e.message}</span>`;
     } finally {
-      btn.textContent = "Load balances";
+      btn.textContent = "Refresh";
       btn.disabled = false;
     }
   });
@@ -412,10 +437,22 @@ function renderOrder() {
       <div class="bracket-leg-price" style="color:var(--green);">$${f2(t.price)}</div>
     </div>`).join("");
 
+  const orderCost = _plan.entry.hi * _plan.shares;
+  const bpOk = !_balances || _balances.buyingPower >= orderCost;
+  const bpWarn = _balances && !bpOk
+    ? `<div style="color:var(--amber); font-size:12px; margin-bottom:8px;">
+        ⚠ Order requires ~$${f2(orderCost)} but buying power is $${f2(_balances.buyingPower)}. Reduce size or free up capital.
+       </div>`
+    : "";
+  const balLine = _balances
+    ? `· Net Liq <strong style="color:var(--text);">$${f2(_balances.netLiq)}</strong> · Buying Power <strong style="color:${bpOk ? "var(--green)" : "var(--amber)"};">$${f2(_balances.buyingPower)}</strong>`
+    : `<span style="color:var(--text-dim); font-style:italic;">· balances not loaded</span>`;
+
   panel.innerHTML = `
     <div style="font-size: 12px; color: var(--text-dim); margin-bottom: 10px;">
-      Bracket order · <strong style="color:var(--text);">${_symbol}</strong> · account <strong style="color:var(--text);">${_accountNumber}</strong>
+      Bracket order · <strong style="color:var(--text);">${_symbol}</strong> · account <strong style="color:var(--text);">${_accountNumber}</strong> ${balLine}
     </div>
+    ${bpWarn}
     <div class="bracket-preview">
       <div class="bracket-leg entry">
         <div class="bracket-leg-icon" style="color:var(--blue);">→</div>
@@ -516,6 +553,7 @@ export function initTastytrade() {
       .then(() => {
         renderConnect();
         renderAccount();
+        if (_accountNumber) fetchBalances().catch(() => {});
       })
       .catch(() => {
         _session = null;
@@ -532,6 +570,9 @@ export function initTastytrade() {
     setStatus("not connected");
   }
 }
+
+export function ttGetNetLiq() { return _balances?.netLiq ?? null; }
+export function ttGetBuyingPower() { return _balances?.buyingPower ?? null; }
 
 export function updateTastytradeOrder(plan, symbol, style) {
   _plan = plan;
