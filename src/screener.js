@@ -86,3 +86,7 @@ function fmtCap(v) {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
   return `$${v}`;
 }
+
+export function screenerTabActivated() {
+  fetchScreen();
+}

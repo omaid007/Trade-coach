@@ -911,6 +911,33 @@ app.get("/api/fundamentals", requireAuth, async (req, res) => {
   res.status(502).json({ error: "Unable to fetch fundamentals — market data unavailable." });
 });
 
+// ─── Options chain ───────────────────────────────────────────────────────────
+
+app.get("/api/options-chain", requireAuth, async (req, res) => {
+  const { symbol, date } = req.query;
+  if (!symbol) return res.status(400).json({ error: "symbol required" });
+
+  const url = `https://query1.finance.yahoo.com/v7/finance/options/${encodeURIComponent(symbol)}` +
+              (date ? `?date=${encodeURIComponent(date)}` : "");
+  try {
+    const r = await fetch(url, { headers: yfHdrs() });
+    if (!r.ok) throw new Error(`YF ${r.status}`);
+    const body = await r.json();
+    const chain = body?.optionChain?.result?.[0];
+    if (!chain) throw new Error("No options data returned");
+    res.json({
+      underlyingSymbol: chain.underlyingSymbol,
+      expirationDates:  chain.expirationDates  ?? [],
+      strikes:          chain.strikes           ?? [],
+      quote:            chain.quote             ?? {},
+      calls:            chain.options?.[0]?.calls ?? [],
+      puts:             chain.options?.[0]?.puts  ?? [],
+    });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+
 // ─── Agent service proxy ─────────────────────────────────────────────────────
 
 const AGENTS_URL    = process.env.AGENTS_URL    || "";

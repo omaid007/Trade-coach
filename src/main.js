@@ -15,6 +15,8 @@ import { initWatchlist, watchlistTabActivated, watchlistTabDeactivated } from ".
 import { initShortTerm, shortTermTabActivated, shortTermTabDeactivated } from "./shortterm.js";
 import { initLongTerm, longTermTabActivated, longTermTabDeactivated } from "./longterm.js";
 import { initJournal, journalUpdatePlan } from "./journal.js";
+import { initScreener, screenerTabActivated } from "./screener.js";
+import { initPortfolio, portfolioTabActivated, portfolioTabDeactivated } from "./portfolio.js";
 import { initAlerts, alertsSetSymbol } from "./alerts.js";
 import { runBacktest } from "./backtest.js";
 import { initAutocomplete } from "./autocomplete.js";
@@ -34,6 +36,8 @@ import {
   renderChecklist,
   renderAIPlan,
   renderAgentResult,
+  renderMultiTF,
+  renderOptionsChain,
   renderLevels,
   renderReport,
   renderExecution,
@@ -190,6 +194,11 @@ async function analyze() {
     renderPlan(STATE.plan, STATE.style, onUpdateSizing);
     syncRiskSelectorUI();
     _agentCache = null;
+    _chainCache = null;
+    const mtfBtn = document.getElementById("multitf-run-btn");
+    if (mtfBtn) { mtfBtn.disabled = false; mtfBtn.textContent = "Analyze All Timeframes"; }
+    const chainBody = document.getElementById("chain-body");
+    if (chainBody) chainBody.innerHTML = `<div class="loading">Click the "Options Chain" tab to load.</div>`;
     const agentsBtn = document.getElementById("agentsRunBtn");
     if (agentsBtn) { agentsBtn.disabled = false; agentsBtn.textContent = "Run Agent Analysis"; }
     document.getElementById("agents-result")?.style && (document.getElementById("agents-result").style.display = "none");
@@ -359,6 +368,56 @@ async function requestAIPlan() {
   }
 }
 
+/* ---------- MULTI-TIMEFRAME ---------- */
+async function runMultiTF() {
+  if (!STATE.symbol) return;
+  const body = document.getElementById("multitf-body");
+  const btn  = document.getElementById("multitf-run-btn");
+  if (btn) { btn.textContent = "Analyzing…"; btn.disabled = true; }
+
+  const STYLES = ["day", "swing", "position"];
+  const results = await Promise.all(STYLES.map(async style => {
+    const cfg = STYLE_CONFIG[style];
+    try {
+      const data  = await fetchOHLC(STATE.symbol, cfg.range, cfg.interval);
+      const ind   = computeAll(data);
+      const setup = detectSetups(data, ind, style)[0];
+      return { style, data, ind, setup };
+    } catch (e) {
+      return { style, error: e.message };
+    }
+  }));
+
+  renderMultiTF(results);
+  if (btn) { btn.textContent = "Re-analyze"; btn.disabled = false; }
+}
+
+/* ---------- OPTIONS CHAIN ---------- */
+let _chainCache = null; // { symbol, ts, data }
+const CHAIN_TTL = 5 * 60_000;
+
+async function loadOptionsChain(dateTs = null) {
+  if (!STATE.symbol) return;
+  const body = document.getElementById("chain-body");
+
+  const cacheKey = `${STATE.symbol}:${dateTs ?? ""}`;
+  if (_chainCache?.key === cacheKey && Date.now() - _chainCache.ts < CHAIN_TTL) {
+    renderOptionsChain(_chainCache.data, STATE.data?.closes?.at(-1));
+    return;
+  }
+
+  if (body) body.innerHTML = `<div class="loading">Loading options chain…</div>`;
+  try {
+    const url = `/api/options-chain?symbol=${encodeURIComponent(STATE.symbol)}` +
+                (dateTs ? `&date=${encodeURIComponent(dateTs)}` : "");
+    const data = await apiFetch(url);
+    _chainCache = { key: cacheKey, ts: Date.now(), data };
+    renderOptionsChain(data, STATE.data?.closes?.at(-1));
+  } catch (e) {
+    if (body) body.innerHTML = `<span class="error">Options chain unavailable: ${e.message}</span>`;
+  }
+}
+
 /* ---------- AGENT ANALYSIS ---------- */
 let _agentCache = null; // { key, data }
 
@@ -444,6 +503,7 @@ function switchMainTab(name) {
   if (_activeMain === "watchlist")  watchlistTabDeactivated();
   if (_activeMain === "shortterm")  shortTermTabDeactivated();
   if (_activeMain === "longterm")   longTermTabDeactivated();
+  if (_activeMain === "portfolio")  portfolioTabDeactivated();
 
   document.querySelectorAll(".main-tab").forEach(b =>
     b.classList.toggle("active", b.dataset.main === name)
@@ -457,6 +517,8 @@ function switchMainTab(name) {
   if (name === "watchlist")  watchlistTabActivated();
   if (name === "shortterm")  shortTermTabActivated();
   if (name === "longterm")   longTermTabActivated();
+  if (name === "screener")   screenerTabActivated();
+  if (name === "portfolio")  portfolioTabActivated();
 }
 
 /* ---------- EVENT WIRING ---------- */
@@ -505,6 +567,19 @@ function wireEvents() {
 
   // AI plan
   document.getElementById("aiPlanBtn").addEventListener("click", requestAIPlan);
+
+  // Multi-TF analysis
+  document.getElementById("multitf-run-btn")?.addEventListener("click", runMultiTF);
+
+  // Options chain — load when tab activated, reload on expiry change
+  document.querySelectorAll(".tab").forEach(t => {
+    t.addEventListener("click", () => {
+      if (t.dataset.tab === "chain" && STATE.symbol) loadOptionsChain();
+    });
+  });
+  document.getElementById("chain-body")?.addEventListener("chain-load-date", e => {
+    loadOptionsChain(e.detail.ts);
+  });
 
   // Agent analysis
   document.getElementById("agentsRunBtn")?.addEventListener("click", runAgentAnalysis);
@@ -604,6 +679,8 @@ initWatchlist(_goAnalyze);
 initShortTerm(_goAnalyze);
 initLongTerm(_goAnalyze);
 initJournal();
+initScreener();
+initPortfolio(_goAnalyze);
 initAlerts();
 renderSession();
 setInterval(renderSession, 60_000);

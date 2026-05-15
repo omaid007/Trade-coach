@@ -952,3 +952,183 @@ export function renderAgentResult(data) {
       AI-generated analysis via Claude + TradingAgents. Educational only — not investment advice.
     </div>`;
 }
+
+// ─── Multi-Timeframe Comparison ───────────────────────────────────────────────
+
+export function renderMultiTF(results) {
+  const el = document.getElementById("multitf-body");
+  if (!el) return;
+
+  if (!results?.length) {
+    el.innerHTML = `<div class="loading">No data.</div>`;
+    return;
+  }
+
+  const TF_LABELS = { day: "Day (15m)", swing: "Swing (1D)", position: "Position (1W)" };
+
+  const cols = results.map(({ style, setup, ind, error }) => {
+    if (error) return `
+      <div class="mtf-col">
+        <div class="mtf-tf-label">${TF_LABELS[style] ?? style}</div>
+        <div class="error" style="font-size:12px;margin-top:8px;">${error}</div>
+      </div>`;
+
+    const dir = setup?.direction ?? "flat";
+    const score = setup?.score ?? 0;
+    const dirCls  = dir === "long" ? "bull" : dir === "short" ? "bear" : "";
+    const dirIcon = dir === "long" ? "▲ LONG" : dir === "short" ? "▼ SHORT" : "— FLAT";
+
+    const rsi  = ind?.rsi?.at(-1);
+    const rsiCls = rsi == null ? "" : rsi > 70 ? "bear" : rsi < 30 ? "bull" : "";
+    const macdHist = ind?.macdHist?.at(-1);
+    const macdCls  = macdHist == null ? "" : macdHist > 0 ? "bull" : "bear";
+    const macdIcon = macdHist == null ? "—" : macdHist > 0 ? "↑" : "↓";
+
+    const close = ind?.closes?.at(-1) ?? 0;
+    const sma20 = ind?.sma20?.at(-1);
+    const sma50 = ind?.sma50?.at(-1);
+    const trendCls  = sma20 && close > sma20 ? "bull" : "bear";
+    const trendText = sma20 && close > sma20 ? "Uptrend" : "Downtrend";
+
+    const scorePct = Math.min(100, score);
+    const scoreCls = scorePct >= 70 ? "bull" : scorePct >= 50 ? "" : "bear";
+
+    return `
+      <div class="mtf-col">
+        <div class="mtf-tf-label">${TF_LABELS[style] ?? style}</div>
+        <div class="mtf-direction ${dirCls}">${dirIcon}</div>
+        <div class="mtf-rows">
+          <div class="mtf-row"><span class="mtf-lbl">Setup</span><span class="mtf-val">${setup?.name ?? "—"}</span></div>
+          <div class="mtf-row"><span class="mtf-lbl">Score</span>
+            <span class="mtf-val ${scoreCls}">${scorePct.toFixed(0)}%
+              <span class="mtf-bar-wrap"><span class="mtf-bar ${scoreCls}" style="width:${scorePct}%"></span></span>
+            </span>
+          </div>
+          <div class="mtf-row"><span class="mtf-lbl">RSI</span><span class="mtf-val ${rsiCls}">${rsi?.toFixed(1) ?? "—"}</span></div>
+          <div class="mtf-row"><span class="mtf-lbl">MACD</span><span class="mtf-val ${macdCls}">${macdIcon} ${macdHist?.toFixed(3) ?? "—"}</span></div>
+          <div class="mtf-row"><span class="mtf-lbl">Trend</span><span class="mtf-val ${trendCls}">${trendText}</span></div>
+          ${sma50 ? `<div class="mtf-row"><span class="mtf-lbl">SMA50</span><span class="mtf-val ${close > sma50 ? "bull" : "bear"}">${close > sma50 ? "Above" : "Below"}</span></div>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+
+  // Confluence: do all non-flat TFs agree?
+  const dirs = results.filter(r => !r.error && r.setup?.direction !== "flat").map(r => r.setup?.direction);
+  let confluence = "";
+  if (dirs.length >= 2) {
+    const allLong  = dirs.every(d => d === "long");
+    const allShort = dirs.every(d => d === "short");
+    if (allLong)  confluence = `<div class="mtf-confluence bull">✓ All timeframes aligned: LONG</div>`;
+    else if (allShort) confluence = `<div class="mtf-confluence bear">✓ All timeframes aligned: SHORT</div>`;
+    else confluence = `<div class="mtf-confluence amber">⚠ Timeframes mixed — use caution</div>`;
+  }
+
+  el.innerHTML = `${confluence}<div class="mtf-grid">${cols}</div>`;
+}
+
+// ─── Options Chain ────────────────────────────────────────────────────────────
+
+export function renderOptionsChain(data, currentPrice) {
+  const el = document.getElementById("chain-body");
+  if (!el) return;
+
+  if (!data || (!data.calls?.length && !data.puts?.length)) {
+    el.innerHTML = `<div class="loading">No options data available for this symbol.</div>`;
+    return;
+  }
+
+  const expiryDates = data.expirationDates ?? [];
+  const expiryPills = expiryDates.slice(0, 12).map((ts, i) => {
+    const d = new Date(ts * 1000).toISOString().slice(0, 10);
+    return `<button class="chain-exp-pill${i === 0 ? " active" : ""}" data-ts="${ts}">${d}</button>`;
+  }).join("");
+
+  const f2 = n => n != null ? n.toFixed(2) : "—";
+  const pct = n => n != null ? (n * 100).toFixed(1) + "%" : "—";
+  const vol = n => n != null ? n.toLocaleString() : "—";
+
+  const chainRow = (opt, type) => {
+    const atm  = currentPrice && Math.abs(opt.strike - currentPrice) / currentPrice < 0.015;
+    const itm  = type === "call" ? opt.inTheMoney : opt.inTheMoney;
+    const itmCls  = itm ? "chain-itm" : "";
+    const atmCls  = atm ? "chain-atm" : "";
+    return `<tr class="${itmCls} ${atmCls}">
+      <td class="chain-iv">${pct(opt.impliedVolatility)}</td>
+      <td class="chain-oi">${vol(opt.openInterest)}</td>
+      <td class="chain-vol">${vol(opt.volume)}</td>
+      <td class="chain-last">${f2(opt.lastPrice)}</td>
+      <td class="chain-bid">${f2(opt.bid)}</td>
+      <td class="chain-ask">${f2(opt.ask)}</td>
+      <td class="chain-strike${atm ? " chain-atm-strike" : ""}">${f2(opt.strike)}</td>
+      <td class="chain-bid">${f2(opt.bid)}</td>
+      <td class="chain-ask">${f2(opt.ask)}</td>
+      <td class="chain-last">${f2(opt.lastPrice)}</td>
+      <td class="chain-vol">${vol(opt.volume)}</td>
+      <td class="chain-oi">${vol(opt.openInterest)}</td>
+      <td class="chain-iv">${pct(opt.impliedVolatility)}</td>
+    </tr>`;
+  };
+
+  // Zip calls/puts by strike
+  const allStrikes = [...new Set([...data.calls.map(c => c.strike), ...data.puts.map(p => p.strike)])].sort((a,b) => a-b);
+  const callsByStrike = Object.fromEntries(data.calls.map(c => [c.strike, c]));
+  const putsByStrike  = Object.fromEntries(data.puts.map(p  => [p.strike, p]));
+
+  const rows = allStrikes.map(strike => {
+    const call = callsByStrike[strike];
+    const put  = putsByStrike[strike];
+    const atm  = currentPrice && Math.abs(strike - currentPrice) / currentPrice < 0.015;
+    const itmCall = call?.inTheMoney;
+    const itmPut  = put?.inTheMoney;
+    return `<tr class="${atm ? "chain-atm-row" : ""}">
+      <td class="${itmCall ? "chain-itm" : ""} chain-iv">${call ? pct(call.impliedVolatility) : "—"}</td>
+      <td class="${itmCall ? "chain-itm" : ""} chain-vol">${call ? vol(call.volume) : "—"}</td>
+      <td class="${itmCall ? "chain-itm" : ""} chain-last">${call ? f2(call.lastPrice) : "—"}</td>
+      <td class="${itmCall ? "chain-itm" : ""} chain-bid chain-calls">${call ? f2(call.bid) : "—"}</td>
+      <td class="${itmCall ? "chain-itm" : ""} chain-ask chain-calls">${call ? f2(call.ask) : "—"}</td>
+      <td class="chain-strike${atm ? " chain-atm-strike" : ""}">${f2(strike)}</td>
+      <td class="${itmPut ? "chain-itm" : ""} chain-bid chain-puts">${put ? f2(put.bid) : "—"}</td>
+      <td class="${itmPut ? "chain-itm" : ""} chain-ask chain-puts">${put ? f2(put.ask) : "—"}</td>
+      <td class="${itmPut ? "chain-itm" : ""} chain-last">${put ? f2(put.lastPrice) : "—"}</td>
+      <td class="${itmPut ? "chain-itm" : ""} chain-vol">${put ? vol(put.volume) : "—"}</td>
+      <td class="${itmPut ? "chain-itm" : ""} chain-iv">${put ? pct(put.impliedVolatility) : "—"}</td>
+    </tr>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+      <span style="font-size:12px; color:var(--text-dim);">Expiry:</span>
+      <div id="chain-expiry-pills" style="display:flex; gap:4px; flex-wrap:wrap;">${expiryPills}</div>
+      ${currentPrice ? `<span class="pill" style="margin-left:auto;">Current: $${currentPrice.toFixed(2)}</span>` : ""}
+    </div>
+    <div class="chain-table-wrap">
+      <table class="chain-tbl">
+        <thead>
+          <tr>
+            <th colspan="5" class="chain-calls-hdr">— CALLS —</th>
+            <th class="chain-strike-hdr">Strike</th>
+            <th colspan="5" class="chain-puts-hdr">— PUTS —</th>
+          </tr>
+          <tr>
+            <th>IV</th><th>Vol</th><th>Last</th><th>Bid</th><th>Ask</th>
+            <th>Strike</th>
+            <th>Bid</th><th>Ask</th><th>Last</th><th>Vol</th><th>IV</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:8px; font-size:11px; color:var(--text-faint);">
+      <span style="display:inline-block; width:12px; height:12px; background:rgba(91,157,255,0.15); border-radius:2px; margin-right:4px;"></span>In the money
+      <span style="margin-left:12px; font-weight:700; color:var(--amber);">Bold strike</span> = near the money (within 1.5%)
+    </div>`;
+
+  // Expiry pill click → reload chain with that date
+  el.querySelectorAll(".chain-exp-pill").forEach(pill => {
+    pill.addEventListener("click", () => {
+      el.querySelectorAll(".chain-exp-pill").forEach(p => p.classList.remove("active"));
+      pill.classList.add("active");
+      el.dispatchEvent(new CustomEvent("chain-load-date", { bubbles: true, detail: { ts: pill.dataset.ts } }));
+    });
+  });
+}

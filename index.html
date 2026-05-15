@@ -46,6 +46,8 @@
     <button class="main-tab" data-main="tastytrade">Tastytrade</button>
     <button class="main-tab" data-main="paper">Paper Trading</button>
     <button class="main-tab" data-main="journal">Journal</button>
+    <button class="main-tab" data-main="screener">Screener</button>
+    <button class="main-tab" data-main="portfolio">Portfolio</button>
     <button class="main-tab" data-main="settings">Settings</button>
   </nav>
 
@@ -131,6 +133,8 @@
           <div class="tab" data-tab="news">News</div>
           <div class="tab" data-tab="backtest">Backtest</div>
           <div class="tab" data-tab="agents">AI Agents</div>
+          <div class="tab" data-tab="multitf">Multi-TF</div>
+          <div class="tab" data-tab="chain">Options Chain</div>
         </div>
         <div class="tab-panel active" id="panel-signals">
           <div class="signal-row">
@@ -155,6 +159,19 @@
         </div>
         <div class="tab-panel" id="panel-backtest">
           <div class="loading">Backtest will run after analysis…</div>
+        </div>
+        <div class="tab-panel" id="panel-multitf">
+          <div id="multitf-body">
+            <p style="color:var(--text-dim);font-size:13px;margin:0 0 12px 0;">
+              Analyze the current symbol across all three timeframes simultaneously to check for confluence before entering a trade.
+            </p>
+            <button id="multitf-run-btn" class="primary" style="font-size:13px;" disabled>Analyze a ticker first</button>
+          </div>
+        </div>
+        <div class="tab-panel" id="panel-chain">
+          <div id="chain-body">
+            <div class="loading">Analyze a ticker to load its options chain.</div>
+          </div>
         </div>
         <div class="tab-panel" id="panel-agents">
           <div id="agents-launch">
@@ -598,6 +615,81 @@
     </div>
 
   </div><!-- /main-journal -->
+
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       SCREENER PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-screener" style="display:none;">
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:14px;">
+        <h3 class="card-title" style="margin:0;">Market Screener</h3>
+        <div style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
+          <button class="scr-tab active" data-screen="gainers">Top Gainers</button>
+          <button class="scr-tab" data-screen="losers">Top Losers</button>
+          <button class="scr-tab" data-screen="active">Most Active</button>
+          <button class="scr-tab" data-screen="trending">Trending</button>
+          <button id="scr-refresh-btn" style="font-size:12px; margin-left:6px;">↻ Refresh</button>
+        </div>
+      </div>
+      <div id="scr-results"><div class="loading">Select a category to load…</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:16px;">
+      <h3 class="card-title">Economic Calendar</h3>
+      <p style="font-size:12px; color:var(--text-dim); margin:0 0 10px 0;">Upcoming macro events — Fed, CPI, jobs report, earnings.</p>
+      <iframe
+        src="https://s.tradingview.com/external-embedding/embed-widget-events.html?locale=en&colorTheme=dark&isTransparent=true&importanceFilter=-1%2C0%2C1&countryFilter=us%2Ceu%2Cgb%2Cjp%2Cca%2Cau"
+        allowtransparency="true" scrolling="yes" allowfullscreen
+        style="width:100%; height:420px; border:none; border-radius:8px; overflow:hidden;">
+      </iframe>
+    </div>
+
+  </div><!-- /main-screener -->
+
+
+  <!-- ══════════════════════════════════════════════════════════════════════════
+       PORTFOLIO PANEL
+  ══════════════════════════════════════════════════════════════════════════ -->
+  <div class="main-panel" id="main-portfolio" style="display:none;">
+
+    <!-- Summary bar -->
+    <div class="card pf-summary-card">
+      <div id="pf-summary" class="pf-sum-row">
+        <div class="pf-sum-stat"><div class="pf-sum-lbl">Portfolio Value</div><div class="pf-sum-val">—</div></div>
+        <div class="pf-sum-stat"><div class="pf-sum-lbl">Total P&amp;L</div><div class="pf-sum-val">—</div></div>
+        <div class="pf-sum-stat"><div class="pf-sum-lbl">Today's P&amp;L</div><div class="pf-sum-val">—</div></div>
+        <div class="pf-sum-stat"><div class="pf-sum-lbl">Positions</div><div class="pf-sum-val">—</div></div>
+      </div>
+    </div>
+
+    <div class="grid">
+
+      <!-- Add position form -->
+      <div class="card" style="max-width:320px; flex:none;">
+        <h3 class="card-title">Add Position</h3>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <input id="pf-sym"    type="text"   placeholder="Symbol (e.g. AAPL)" style="text-transform:uppercase;" />
+          <input id="pf-shares" type="number" placeholder="Shares" min="0.001" step="any" />
+          <input id="pf-cost"   type="number" placeholder="Avg cost ($)" step="0.01" />
+          <button id="pf-add-btn" class="primary" style="font-size:13px;">Add Position</button>
+        </div>
+        <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-dim); line-height:1.5;">
+          Adding an existing symbol averages down/up your cost basis.<br>
+          Prices refresh automatically every 60 seconds.
+        </div>
+      </div>
+
+      <!-- Holdings table -->
+      <div class="card">
+        <h3 class="card-title">Holdings</h3>
+        <div id="pf-list"><div class="loading">No positions yet — add one to the left.</div></div>
+      </div>
+
+    </div>
+
+  </div><!-- /main-portfolio -->
 
 
   <!-- ══════════════════════════════════════════════════════════════════════════
