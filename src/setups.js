@@ -7,9 +7,23 @@ import { STYLE_CONFIG } from "./config.js";
  *   { key, name, direction: "long"|"short"|"flat", score, entry: {lo, hi, ref},
  *     stop, targets: number[], thesis, signals: string[] }
  */
+// Format a price for display — avoids trailing zeroes for large prices
+function fp(v) {
+  if (v == null) return "—";
+  return v >= 1000 ? v.toFixed(0) : v >= 100 ? v.toFixed(1) : v.toFixed(2);
+}
+
+// Describe % distance from price to a level (e.g. "2.4% below the 50MA")
+function dist(price, level, label) {
+  if (!level) return "";
+  const pct = ((price - level) / level * 100).toFixed(1);
+  return `${Math.abs(pct)}% ${+pct > 0 ? "above" : "below"} the ${label}`;
+}
+
 export function detectSetups(d, ind, style) {
   const i = d.closes.length - 1;
   const price  = d.closes[i];
+  const sym    = d.meta?.symbol ?? "";
   const sma20  = ind.sma20[i];
   const sma50  = ind.sma50[i];
   const sma200 = ind.sma200[i];
@@ -113,10 +127,23 @@ export function detectSetups(d, ind, style) {
       },
       stop: Math.min(sma50, price - aMult * a),
       targets: [price + aMult * a * 1.5, recH, recH + (recH - recL) * 0.382],
-      thesis:
-        `Price is in an established uptrend (above 50- and 200-period MAs in the right order). ` +
-        `RSI ${r.toFixed(0)} is ${r >= 50 && r <= 65 ? "in the ideal zone" : "constructive"}. Buy a pullback toward ` +
-        `the 20-period MA — bulls typically defend that line in healthy trends.`,
+      thesis: (() => {
+        const entryLvl = sma20 ? fp(sma20) : fp(price * 0.99);
+        const maStatus = macdLine > sigLine
+          ? (histNow > histPrev ? "expanding bullish histogram" : "positive but slowing")
+          : "crossing bearish — watch closely";
+        const volNote  = volRatio > 1.3 ? ` Volume is running ${(volRatio).toFixed(1)}× average, confirming buyers.`
+                       : volRatio < 0.8 ? ` Volume is light (${(volRatio).toFixed(1)}× avg) — wait for heavier buying before adding size.`
+                       : "";
+        const ictNote  = nearFVGBull ? ` Price is inside a bullish Fair Value Gap — ICT traders will defend this level aggressively.`
+                       : atOBBull    ? ` Price is sitting on a bullish Order Block, a key institutional demand zone.`
+                       : "";
+        const divNote  = divBull ? ` RSI divergence (${ind.rsiDiv.description}) adds confluence — momentum is recovering before price.` : "";
+        const invalidate = sma50 ? ` Setup invalidates on a daily close below the 50MA ($${fp(sma50)}).` : "";
+        return `${sym} is in a confirmed uptrend: price ($${fp(price)}) is ${dist(price, sma50, "50MA")} and ${dist(price, sma200, "200MA")}, with MAs stacked in bullish order. ` +
+               `RSI ${r.toFixed(0)} is ${r >= 50 && r <= 65 ? "in the ideal zone (strong but not stretched)" : r > 65 ? "elevated — partial position sizing advised" : "recovering toward 50"}; MACD shows ${maStatus}.` +
+               `${volNote}${ictNote}${divNote} Target a pullback entry near the 20MA (~$${entryLvl}).${invalidate}`;
+      })(),
       signals: sigs,
     });
   }
@@ -172,9 +199,23 @@ export function detectSetups(d, ind, style) {
       },
       stop: Math.max(sma50, price + aMult * a),
       targets: [price - aMult * a * 1.5, recL, recL - (recH - recL) * 0.382],
-      thesis:
-        `Downtrend in force (price < 50MA < 200MA). Fade rallies into the 20-period MA — ` +
-        `sellers typically reload there. RSI ${r.toFixed(0)} confirms bearish momentum.`,
+      thesis: (() => {
+        const entryLvl = sma20 ? fp(sma20) : fp(price * 1.01);
+        const maStatus = macdLine < sigLine
+          ? (histNow < histPrev ? "expanding bearish histogram" : "negative but flattening")
+          : "crossing bullish — reduce size";
+        const volNote  = volRatio > 1.3 ? ` Volume is ${(volRatio).toFixed(1)}× average on the decline, confirming distribution.`
+                       : volRatio < 0.8 ? ` Volume is thin (${(volRatio).toFixed(1)}× avg) — be cautious, low-volume moves can reverse quickly.`
+                       : "";
+        const ictNote  = nearFVGBear ? ` Price is inside a bearish Fair Value Gap — ICT traders expect a rejection here.`
+                       : atOBBear    ? ` Price is at a bearish Order Block, an institutional supply zone.`
+                       : "";
+        const divNote  = divBear ? ` RSI divergence (${ind.rsiDiv.description}) confirms momentum is deteriorating before price.` : "";
+        const invalidate = sma50 ? ` Setup invalidates on a daily close back above the 50MA ($${fp(sma50)}).` : "";
+        return `${sym} is in a confirmed downtrend: price ($${fp(price)}) is ${dist(price, sma50, "50MA")} and ${dist(price, sma200, "200MA")}, MAs stacked in bearish order. ` +
+               `RSI ${r.toFixed(0)} is ${r >= 35 && r <= 50 ? "in the ideal short zone" : r < 35 ? "oversold — avoid new shorts, wait for a bounce" : "still elevated — better entry possible on a rally to the 20MA"}; MACD shows ${maStatus}.` +
+               `${volNote}${ictNote}${divNote} Fade a rally into the 20MA (~$${entryLvl}).${invalidate}`;
+      })(),
       signals: sigs,
     });
   }
@@ -223,10 +264,18 @@ export function detectSetups(d, ind, style) {
       entry: { lo: recH, hi: recH * 1.005, ref: "above 20-period high" },
       stop: recH - aMult * a,
       targets: [recH + aMult * a, recH + aMult * a * 2, recH + aMult * a * 3],
-      thesis:
-        `Price is coiled at the recent high${eqHigh ? " with equal highs — a liquidity target above" : ""}. ` +
-        `A clean break with${volRatio > 1.3 ? " volume confirmation" : " caution (low volume)"} often runs ` +
-        `another ATR or two as shorts cover. Use a stop-limit BUY just above the high.`,
+      thesis: (() => {
+        const volDesc  = volRatio > 2.0 ? `strong volume (${(volRatio).toFixed(1)}× avg) — high-conviction break`
+                       : volRatio > 1.3 ? `above-average volume (${(volRatio).toFixed(1)}× avg)`
+                       : `light volume (${(volRatio).toFixed(1)}× avg) — risk of a false breakout, wait for confirmation`;
+        const liqNote  = eqHigh ? ` Equal highs at $${fp(recH)} create a liquidity pool — a break will trigger stop orders and accelerate the move.` : "";
+        const fvgNote  = nearFVGBull ? ` A bullish FVG below provides a demand cushion.` : "";
+        const maNote   = sma50 ? ` Price is ${dist(price, sma50, "50MA")}, ${price > sma50 ? "a constructive tailwind for the breakout" : "which is a headwind — wait for reclaim first"}.` : "";
+        const invalidate = ` Setup invalidates if price reverses back below $${fp(recH - a * 0.5)} on volume.`;
+        return `${sym} ($${fp(price)}) is pressing against its 20-bar high at $${fp(recH)} with ${volDesc}.` +
+               `${liqNote}${fvgNote}${maNote} RSI ${r.toFixed(0)} and ${macdLine > sigLine ? "positive MACD" : "MACD turning up"} support the breakout thesis.` +
+               ` Enter on a clean close or stop-limit above $${fp(recH)}, targeting $${fp(recH + aMult * a)} then $${fp(recH + aMult * a * 2)}.${invalidate}`;
+      })(),
       signals: sigs,
     });
   }
@@ -268,11 +317,19 @@ export function detectSetups(d, ind, style) {
       entry: { lo: price * 0.995, hi: price * 1.005, ref: "current price (limit)" },
       stop: price - 1.2 * a,
       targets: [bbM, sma20 || bbM, bbU],
-      thesis:
-        `RSI ${r.toFixed(0)} is oversold with price tagging the lower Bollinger Band. ` +
-        `${divBull ? "Bullish divergence adds conviction. " : ""}` +
-        `Mean-reversion bounces target the mid-band first. Keep the stop tight — ` +
-        `mean reversion fails fast in real downtrends.`,
+      thesis: (() => {
+        const bbNote   = bbM ? ` First target is the BB mid-band (~$${fp(bbM)})${bbU ? `, then the upper band (~$${fp(bbU)})` : ""}.` : "";
+        const structNote = sma200 && price > sma200
+          ? ` The 200MA at $${fp(sma200)} is below, keeping the larger structure bullish — this is a dip in an uptrend, not a breakdown.`
+          : ` Price is below the 200MA ($${fp(sma200 ?? 0)}), so this is a counter-trend bounce — size down.`;
+        const divNote  = divBull
+          ? ` Bullish RSI divergence (${ind.rsiDiv.description}) is the strongest signal here — price made a lower low but RSI didn't, suggesting sellers are exhausted.`
+          : ` No RSI divergence yet — wait for a green candle close before entering; don't catch a falling knife.`;
+        const volNote  = volRatio > 1.5 ? ` Volume spike (${(volRatio).toFixed(1)}× avg) suggests a capitulation flush.` : "";
+        const stopNote = ` Hard stop at $${fp(price - 1.2 * a)} (1.2× ATR below entry).`;
+        return `${sym} ($${fp(price)}) has RSI at ${r.toFixed(0)} with price at the lower Bollinger Band ($${fp(bbL ?? price)}), a textbook mean-reversion setup.` +
+               `${volNote}${divNote}${structNote}${bbNote}${stopNote} Mean reversion fails fast in genuine downtrends — respect the stop.`;
+      })(),
       signals: sigs,
     });
   }
@@ -311,10 +368,19 @@ export function detectSetups(d, ind, style) {
       entry: { lo: price * 0.995, hi: price * 1.01, ref: "current price (limit)" },
       stop: price + 1.2 * a,
       targets: [bbM, sma20 || bbM, bbL],
-      thesis:
-        `RSI ${r.toFixed(0)} is overbought with price at the upper Bollinger Band. ` +
-        `${divBear ? "Bearish divergence adds conviction. " : ""}` +
-        `Counter-trend fades work best in ranges — use a tight stop.`,
+      thesis: (() => {
+        const bbNote   = bbM ? ` First target is the BB mid-band (~$${fp(bbM)})${bbL ? `, then the lower band (~$${fp(bbL)})` : ""}.` : "";
+        const structNote = sma200 && price < sma200
+          ? ` The 200MA at $${fp(sma200)} is overhead, keeping the larger structure bearish — this is a rally into resistance.`
+          : ` Price is above the 200MA ($${fp(sma200 ?? 0)}), so this is a counter-trend short — size down and respect the trend.`;
+        const divNote  = divBear
+          ? ` Bearish RSI divergence (${ind.rsiDiv.description}) is the key signal — price made a higher high but RSI didn't, revealing weakening momentum.`
+          : ` No RSI divergence yet — wait for a red candle close before committing; fading strong trends is dangerous.`;
+        const volNote  = volRatio > 1.5 ? ` Volume surge (${(volRatio).toFixed(1)}× avg) at the high may indicate a blow-off exhaustion.` : "";
+        const stopNote = ` Hard stop at $${fp(price + 1.2 * a)} (1.2× ATR above entry).`;
+        return `${sym} ($${fp(price)}) has RSI at ${r.toFixed(0)} with price at the upper Bollinger Band ($${fp(bbU ?? price)}), a potential exhaustion point.` +
+               `${volNote}${divNote}${structNote}${bbNote}${stopNote} Counter-trend fades work best in ranges — a strong trend will run through your stop.`;
+      })(),
       signals: sigs,
     });
   }
