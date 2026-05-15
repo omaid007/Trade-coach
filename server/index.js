@@ -142,7 +142,18 @@ app.get("/api/quote", requireAuth, async (req, res) => {
 
   const base = `/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${interval || "1d"}&range=${range || "6mo"}&includePrePost=false`;
 
-  // 1. Try Yahoo Finance (preferred — real-time, intraday)
+  // 1a. Try Yahoo Finance without crumb (fastest, often works on cloud IPs)
+  for (const host of ["query1", "query2"]) {
+    try {
+      const r = await fetch(`https://${host}.finance.yahoo.com${base}`, { headers: yfHdrs() });
+      if (r.ok) {
+        const data = await r.json();
+        if (data?.chart?.result?.[0]) return res.json(data);
+      }
+    } catch {}
+  }
+
+  // 1b. Try Yahoo Finance with crumb cookie
   try {
     const { crumb, cookie } = await getCrumb();
     const hdrs = { ...yfHdrs(), Cookie: cookie };
@@ -156,10 +167,12 @@ app.get("/api/quote", requireAuth, async (req, res) => {
           await refreshCrumb();
           const r2 = await fetch(urlWithCrumb(host), { headers: { ...yfHdrs(), Cookie: _yfCookie } });
           if (!r2.ok) continue;
-          return res.json(await r2.json());
+          const data = await r2.json();
+          if (data?.chart?.result?.[0]) return res.json(data);
         }
         if (!r.ok) continue;
-        return res.json(await r.json());
+        const data = await r.json();
+        if (data?.chart?.result?.[0]) return res.json(data);
       } catch {}
     }
   } catch {}
@@ -171,7 +184,7 @@ app.get("/api/quote", requireAuth, async (req, res) => {
     if (tdData) return res.json(tdData);
   } catch {}
 
-  // No key set — tell client to try browser-direct fetch
+  // No key set — let the client try browser-direct fetches
   if (!tdKey) {
     res.status(503).json({
       error: "Stock data unavailable. Add TWELVEDATA_KEY to your Railway environment variables (free at twelvedata.com).",

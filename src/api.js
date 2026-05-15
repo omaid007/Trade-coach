@@ -50,13 +50,16 @@ export async function fetchOHLC(symbol, range, interval) {
   // 2. Direct browser fetch to Yahoo Finance (works when user's browser IP isn't rate-limited)
   const yfPath =
     `/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?interval=${interval}&range=${range}&includePrePost=false`;
+    `?interval=${interval}&range=${range}&includePrePost=false&corsDomain=finance.yahoo.com`;
   for (const host of ["query1", "query2"]) {
     try {
-      const res = await fetch(`https://${host}.finance.yahoo.com${yfPath}`, { cache: "no-store" });
+      const res = await fetch(`https://${host}.finance.yahoo.com${yfPath}`, {
+        cache: "no-store",
+        headers: { "Accept": "application/json" },
+      });
       if (!res.ok) continue;
       const data = await res.json();
-      return parseYfChart(data, symbol);
+      if (data?.chart?.result?.[0]) return parseYfChart(data, symbol);
     } catch {}
   }
 
